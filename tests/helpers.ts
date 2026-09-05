@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadContent, type RawContentFiles } from '../src/data/loader.ts';
 import { DATA_DIR, loadContentFromDisk, readRawContent } from '../src/data/node.ts';
+import type { ProjectileDef } from '../src/sim/effects.ts';
 import type { Content, FightRules } from '../src/sim/rules.ts';
 import type { StatBlock } from '../src/sim/stats.ts';
 import type { BoardUnit, UnitDef } from '../src/sim/units.ts';
@@ -50,14 +51,21 @@ export function testUnit(id: string, stats: Partial<StatBlock>, extra: Partial<U
     stats: [block, block, block],
     ability: null,
     hooks: {},
+    aura: null,
     ...extra,
   };
 }
 
-/** Fight rules built from dev content, with a custom unit registry. */
-export function rulesWithUnits(units: UnitDef[], overrides: Partial<FightRules['combat']> = {}): FightRules {
+function projectilesById(list: readonly ProjectileDef[]): Record<string, ProjectileDef> {
+  const by: Record<string, ProjectileDef> = {};
+  for (const p of list) by[p.id] = p;
+  return by;
+}
+
+/** Fight rules built from dev content, with a custom unit registry (and optional projectiles). */
+export function rulesWithUnits(units: UnitDef[], overrides: Partial<FightRules['combat']> = {}, projectiles?: readonly ProjectileDef[]): FightRules {
   const c = devContent();
   const byId: Record<string, UnitDef> = {};
   for (const u of units) byId[u.id] = u;
-  return { tickRate: c.rules.tickRate, combat: { ...c.rules.combat, ...overrides }, board: c.board, units: byId };
+  return { tickRate: c.rules.tickRate, combat: { ...c.rules.combat, ...overrides }, board: c.board, units: byId, projectiles: projectilesById(projectiles ?? c.projectiles) };
 }

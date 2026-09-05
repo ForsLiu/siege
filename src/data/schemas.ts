@@ -2,10 +2,10 @@
 // Traits, items and augments arrive with SPEC.md: add their schemas here (see EXTENSION POINTS).
 import { z } from 'zod';
 import { DAMAGE_KINDS, HOOK_NAMES, TARGET_SELS } from '../sim/effects.ts';
-import type { Effect, Hooks } from '../sim/effects.ts';
+import type { AuraDef, AuraEffect, Effect, Hooks, ProjectileDef } from '../sim/effects.ts';
 import type { BoardConfig } from '../sim/hex.ts';
 import type { Encounter, Rules } from '../sim/rules.ts';
-import { STAT_KIND, STAT_NAMES } from '../sim/stats.ts';
+import { STAT_KIND, STAT_MAX, STAT_NAMES } from '../sim/stats.ts';
 import type { StatBlock } from '../sim/stats.ts';
 import type { BoardUnit, UnitDef } from '../sim/units.ts';
 
@@ -13,8 +13,7 @@ const provisional = z.string().optional();
 const nonNeg = z.number().finite().nonnegative();
 const posInt = z.number().int().positive();
 const nonNegInt = z.number().int().nonnegative();
-/** Magnitude cap for stat values so modifier products can never overflow to Infinity. */
-const STAT_MAX = 1e9;
+/** Magnitude cap for authored stat values; computed stats saturate at the same bound. */
 const statNonNeg = nonNeg.max(STAT_MAX);
 const statSigned = z.number().finite().min(-STAT_MAX).max(STAT_MAX);
 
@@ -35,26 +34,57 @@ export const StatBlockSchema = z.strictObject({
 const ScalingSchema = z.strictObject({ stat: StatNameSchema, factor: statSigned });
 const TargetSchema = z.enum(TARGET_SELS);
 
+const duration = z.number().finite().positive();
+/** Tag names share the unit-id shape so data stays greppable. */
+const tagName = z.string().regex(/^[a-z0-9_.-]+$/);
+
+const StatModSchema = z
+  .strictObject({
+    type: z.literal('statMod'),
+    stat: StatNameSchema,
+    mode: z.enum(['mul', 'flat']),
+    value: statSigned,
+    duration: duration.nullable(),
+    target: TargetSchema,
+  })
+  .refine((e) => !(e.mode === 'mul' && STAT_KIND[e.stat] === 'flat'), {
+    message: 'mul modifier on a flat-kind stat',
+    path: ['mode'],
+  });
+
+const ApplyTagSchema = z.strictObject({ type: z.literal('applyTag'), tag: tagName, duration: duration.nullable(), target: TargetSchema });
+
 export const EffectSchema = z
   .discriminatedUnion('type', [
     z.strictObject({ type: z.literal('damage'), kind: z.enum(DAMAGE_KINDS), amount: statSigned, scaling: ScalingSchema.optional(), target: TargetSchema }),
     z.strictObject({ type: z.literal('heal'), amount: statSigned, scaling: ScalingSchema.optional(), target: TargetSchema }),
-    z
-      .strictObject({
-        type: z.literal('statMod'),
-        stat: StatNameSchema,
-        mode: z.enum(['mul', 'flat']),
-        value: statSigned,
-        duration: z.number().finite().positive().nullable(),
-        target: TargetSchema,
-      })
-      .refine((e) => !(e.mode === 'mul' && STAT_KIND[e.stat] === 'flat'), {
-        message: 'mul modifier on a flat-kind stat',
-        path: ['mode'],
-      }),
-    z.strictObject({ type: z.literal('stun'), duration: z.number().finite().positive(), target: TargetSchema }),
+    z.strictObject({ type: z.literal('shield'), amount: statNonNeg, scaling: ScalingSchema.optional(), duration: duration.nullable(), target: TargetSchema }),
+    StatModSchema,
+    z.strictObject({ type: z.literal('stun'), duration, target: TargetSchema }),
+    ApplyTagSchema,
+    z.strictObject({ type: z.literal('spawnProjectile'), ref: z.string().regex(/^[a-z0-9_.-]+$/), target: TargetSchema }),
   ])
   .describe('Effect') satisfies z.ZodType<Effect>;
+
+/**
+ * Aura effects are continuous state only (statMod / applyTag) and must be permanent
+ * (`duration: null`): the aura itself is what starts and ends them, per-tick.
+ */
+export const AuraEffectSchema = z
+  .discriminatedUnion('type', [StatModSchema, ApplyTagSchema])
+  .refine((e) => e.duration === null, { message: 'aura effects must have duration null (the aura controls them)', path: ['duration'] }) satisfies z.ZodType<AuraEffect>;
+
+export const AuraSchema = z.strictObject({
+  range: z.number().int().min(0).max(64),
+  effects: z.array(AuraEffectSchema).min(1),
+}) satisfies z.ZodType<AuraDef>;
+
+export const ProjectileDefSchema = z.strictObject({
+  id: z.string().regex(/^[a-z0-9_.-]+$/),
+  /** Hexes per second. */
+  speed: z.number().finite().positive().max(1000),
+  effects: z.array(EffectSchema).min(1),
+}) satisfies z.ZodType<ProjectileDef>;
 
 const hookShape = Object.fromEntries(HOOK_NAMES.map((h) => [h, z.array(EffectSchema).optional()])) as Record<(typeof HOOK_NAMES)[number], z.ZodOptional<z.ZodArray<typeof EffectSchema>>>;
 export const HooksSchema = z.strictObject(hookShape) satisfies z.ZodType<Hooks>;
@@ -68,12 +98,15 @@ export const UnitDefSchema = z.strictObject({
   stats: z.array(StatBlockSchema).min(1),
   ability: z.strictObject({ name: z.string().min(1), effects: z.array(EffectSchema) }).nullable(),
   hooks: HooksSchema,
+  aura: AuraSchema.nullable().default(null),
   // EXTENSION POINTS (SPEC): traits: z.array(TraitId), itemSlots, ...
 }) satisfies z.ZodType<UnitDef>;
 
 export const UnitsFileSchema = z.strictObject({
   _provisional: provisional,
   units: z.array(UnitDefSchema),
+  /** Projectile registry referenced by `spawnProjectile` effects. */
+  projectiles: z.array(ProjectileDefSchema).default([]),
 });
 
 export const BoardConfigSchema = z
@@ -126,6 +159,7 @@ export const RulesSchema = z
       minAttackSpeed: z.number().finite().positive(),
       maxAttackSpeed: z.number().finite().positive(),
       drawCountsAsLoss: z.boolean(),
+      maxHookDepth: posInt.max(64),
     }),
     economy: z.strictObject({
       startGold: nonNegInt,

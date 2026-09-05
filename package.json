@@ -5,7 +5,7 @@
   "description": "Siege - 2D single-player PvE roguelike autobattler (engine + tooling)",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "scripts": {
     "dev": "vite",

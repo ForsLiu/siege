@@ -100,6 +100,51 @@
         { "type": "stun", "duration": 1.5, "target": "enemies" }
       ] },
       "hooks": { "onDeath": [ { "type": "damage", "kind": "true", "amount": 200, "target": "enemies" } ] }
+    },
+    {
+      "id": "dev.warden", "name": "Dev Warden", "cost": 4, "attackType": "melee", "tags": ["dev"],
+      "stats": [
+        { "hp": 900, "attack": 60, "attackSpeed": 0.6, "armor": 40, "magicResist": 40, "range": 1, "maxMana": 80, "startMana": 20, "abilityPower": 100 },
+        { "hp": 1620, "attack": 108, "attackSpeed": 0.6, "armor": 40, "magicResist": 40, "range": 1, "maxMana": 80, "startMana": 20, "abilityPower": 100 },
+        { "hp": 2916, "attack": 194, "attackSpeed": 0.6, "armor": 40, "magicResist": 40, "range": 1, "maxMana": 80, "startMana": 20, "abilityPower": 100 }
+      ],
+      "ability": { "name": "Dev Aegis", "effects": [
+        { "type": "shield", "amount": 200, "scaling": { "stat": "abilityPower", "factor": 1 }, "duration": 4, "target": "allies" },
+        { "type": "applyTag", "tag": "warded", "duration": 4, "target": "allies" }
+      ] },
+      "hooks": {
+        "onRoundStart": [ { "type": "shield", "amount": 150, "duration": null, "target": "self" } ],
+        "onTakeDamage": [ { "type": "statMod", "stat": "armor", "mode": "flat", "value": 5, "duration": 3, "target": "self" } ]
+      },
+      "aura": { "range": 2, "effects": [
+        { "type": "statMod", "stat": "armor", "mode": "flat", "value": 15, "duration": null, "target": "allies" },
+        { "type": "applyTag", "tag": "warden.aura", "duration": null, "target": "allies" }
+      ] }
+    },
+    {
+      "id": "dev.arbalest", "name": "Dev Arbalest", "cost": 5, "attackType": "ranged", "tags": ["dev"],
+      "stats": [
+        { "hp": 500, "attack": 55, "attackSpeed": 0.7, "armor": 15, "magicResist": 15, "range": 5, "maxMana": 60, "startMana": 20, "abilityPower": 100 },
+        { "hp": 900, "attack": 99, "attackSpeed": 0.7, "armor": 15, "magicResist": 15, "range": 5, "maxMana": 60, "startMana": 20, "abilityPower": 100 },
+        { "hp": 1620, "attack": 178, "attackSpeed": 0.7, "armor": 15, "magicResist": 15, "range": 5, "maxMana": 60, "startMana": 20, "abilityPower": 100 }
+      ],
+      "ability": { "name": "Dev Bolt", "effects": [
+        { "type": "spawnProjectile", "ref": "dev.bolt", "target": "target" }
+      ] },
+      "hooks": {
+        "onAttack": [ { "type": "applyTag", "tag": "aiming", "duration": 1, "target": "self" } ],
+        "onCast": [ { "type": "statMod", "stat": "attackSpeed", "mode": "mul", "value": 0.2, "duration": 2, "target": "self" } ],
+        "onTakeDamage": [ { "type": "applyTag", "tag": "flinched", "duration": 1, "target": "self" } ]
+      }
+    }
+  ],
+  "projectiles": [
+    {
+      "id": "dev.bolt", "speed": 8,
+      "effects": [
+        { "type": "damage", "kind": "physical", "amount": 150, "scaling": { "stat": "attack", "factor": 1.5 }, "target": "target" },
+        { "type": "applyTag", "tag": "pinned", "duration": 2, "target": "target" }
+      ]
     }
   ]
 }

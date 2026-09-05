@@ -10,7 +10,7 @@
     "mitigationConstant": 100,
     "minAttackSpeed": 0.2,
     "maxAttackSpeed": 5,
-    "drawCountsAsLoss": true
+    "drawCountsAsLoss": true, "maxHookDepth": 8
   },
   "economy": {
     "startGold": 10,

@@ -1,5 +1,17 @@
 # OPS.md — Siege pipeline cheat sheet (owner)
 
+**Siege runs in cloud mode** (Claude Code on the web) — see "Cloud mode" below. `run-until-done.ps1` and `report-hourly.ps1` stay in the repo as the **local fallback**; the Layout / Windows / Signals / Lanes sections below describe that local loop only.
+
+## Cloud mode
+- One cloud task = one fresh clone of `main` on its own branch. You merge task branches into `main` through pull requests (or let a routine push `main` directly when unrestricted branch pushes are enabled).
+- The task installs deps itself (`npm ci`) when `node_modules` is missing or `package-lock.json` moved.
+- Every task works in this order: (a) unprocessed files in `feedback/`; (b) BOOTSTRAP.md continuation until PROGRESS.md says "Bootstrap complete"; (c) SPEC intake for any SPEC version without an intake entry — the task stops after that commit; (d) backlog items, one at a time, end to end.
+- A task stops after the number of items its prompt names (default 3), at a hard blocker (logged under Known issues in PROGRESS.md), or when nothing is actionable (it tells you why). It commits after every item and pushes its branch before stopping. No `IDLE.md`, no `STOP.md` in cloud mode; `DONE.md` is unchanged. To stop a task early, just stop the session.
+- **Feedback:** commit the `.md` file into `feedback/` on `main`, or paste it as a message to the running session. A message starting with `type:` is treated exactly like a feedback file. Feedback for a lane starts with `lane: <name>`.
+- **Spec updates:** commit `SPEC.md` (later `SPEC-V2.md`, …) to `main`; the next task does the intake and stops there.
+- **Lanes:** separate cloud tasks on their own branches working from `BACKLOG-<LANE>.md` (its first section is a hard file scope). The main lane owns triage, phase completion and DONE.md. Merge the main branch first, lane branches after.
+- **Merges:** when a task branch needs `main`, tell it "merge main into this branch" — `main` wins on `src/**` and `data/**`, the branch's additions are kept, conflict markers removed, `npm run test:fast` green, then push. The FULL `npm test` runs at phase completion and before DONE.md only.
+
 ## Layout
 ```
 D:\Siege\game          repo, main lane (Window 1)

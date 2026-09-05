@@ -24,7 +24,16 @@ runTool(() => {
   console.log(`survivors left=${result.survivors.left.length} right=${result.survivors.right.length}  events=${result.events.length}  hash=${result.hash}`);
   console.log('ledger:');
   for (const e of result.ledger) {
-    console.log(`  #${e.uid} ${e.team === 0 ? 'L' : 'R'} ${e.defId.padEnd(14)} dealt=${e.dealt.toFixed(0).padStart(6)} taken=${e.taken.toFixed(0).padStart(6)} healed=${e.healed.toFixed(0).padStart(6)}`);
+    const cols = [
+      `dealt=${e.dealt.toFixed(0).padStart(6)}`,
+      `taken=${e.taken.toFixed(0).padStart(6)}`,
+      `healed=${e.healed.toFixed(0).padStart(6)}`,
+      `shielded=${e.shielded.toFixed(0).padStart(6)}`,
+      `absorbed=${e.absorbed.toFixed(0).padStart(6)}`,
+      `mitigated=${e.mitigated.toFixed(0).padStart(6)}`,
+      `k/d=${e.kills}/${e.deaths}`,
+    ];
+    console.log(`  #${e.uid} ${e.team === 0 ? 'L' : 'R'} ${e.defId.padEnd(14)} ${cols.join(' ')}`);
   }
   if (flagBool(args, 'events')) {
     console.log('events:');

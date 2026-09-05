@@ -1,5 +1,5 @@
 // Unit definitions (from data) and the unit shapes shared by run state and fights.
-import type { Effect, Hooks } from './effects.ts';
+import type { AuraDef, Effect, Hooks } from './effects.ts';
 import type { Modifier, StatBlock, StatName } from './stats.ts';
 import { computeStat, STAT_NAMES } from './stats.ts';
 
@@ -21,6 +21,8 @@ export interface UnitDef {
   stats: StatBlock[];
   ability: UnitAbility | null;
   hooks: Hooks;
+  /** Continuous passive applied to units within range each tick; null = none. */
+  aura: AuraDef | null;
   // Extension points reserved for SPEC content (traits, items, augments) are added to
   // the schema and here together when SPEC.md defines them.
 }

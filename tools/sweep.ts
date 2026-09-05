@@ -65,14 +65,18 @@ export function aggregate(results: SweepJobResult[], policies: string[]): Policy
 export async function runSweep(seeds: number[], policies: string[], workers: number): Promise<SweepJobResult[]> {
   const jobs: SweepJob[] = [];
   for (const policy of policies) for (const seed of seeds) jobs.push({ seed, policy });
-  if (workers <= 1 || jobs.length <= 1) return jobs.map(runJob);
+  // Results are sorted the same way on both paths, so a report never depends on --workers.
+  if (workers <= 1 || jobs.length <= 1) return sortResults(jobs.map(runJob));
 
   const results: SweepJobResult[] = [];
   let next = 0;
   const workerUrl = new URL('./sweep-worker.ts', import.meta.url);
   const spawn = (): Promise<void> =>
     new Promise((resolve, reject) => {
-      const w = new Worker(workerUrl, { workerData: { role: 'sweep' }, execArgv: ['--import', 'tsx'] });
+      // No execArgv: the worker's module graph is loaded by Node's own type stripping, so it
+      // must stay erasable (enforced by tsconfig's erasableSyntaxOnly). A `--import tsx` preload
+      // would resolve tsx relative to the process CWD and fail outside the repo root (P0-B1).
+      const w = new Worker(workerUrl, { workerData: { role: 'sweep' } });
       const feed = (): void => {
         if (next >= jobs.length) {
           w.postMessage('exit');
@@ -89,6 +93,10 @@ export async function runSweep(seeds: number[], policies: string[], workers: num
       feed();
     });
   await Promise.all(Array.from({ length: Math.min(workers, jobs.length) }, spawn));
+  return sortResults(results);
+}
+
+function sortResults(results: SweepJobResult[]): SweepJobResult[] {
   results.sort((a, b) => a.policy.localeCompare(b.policy) || a.seed - b.seed);
   return results;
 }

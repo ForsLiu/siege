@@ -50,7 +50,7 @@ TypeScript (strict) · Vite · HTML canvas 2D · Vitest · zod · Node 22+. No U
 3. Never stop to ask a design question. Choose, log in QUESTIONS.md, continue.
 4. Update PROGRESS.md at every item completion and before any stop: state, next action, known issues.
 5. Keep `npm run dev` playable at all times up to the furthest built screen.
-6. Touch nothing outside this repository. `STOP.md` and `IDLE.md` are loop signals: never commit them; write `IDLE.md` only as described below.
+6. Touch nothing outside this repository. `STOP.md` and `IDLE.md` are local-loop signals only: never commit them, and never write them in cloud mode (see "Cloud task contract").
 7. Project-local devDependencies only; no global installs.
 8. If the working tree has uncommitted changes at iteration start (an interrupted iteration), first bring them to a green committed state or revert them, and log which.
 
@@ -59,8 +59,8 @@ TypeScript (strict) · Vite · HTML canvas 2D · Vitest · zod · Node 22+. No U
 - **qa-playtester** before marking an item done; it confirms the acceptance criteria and tries to break the build. Every QA-filed bug becomes a `[bug]` item with a regression test.
 - **balance-analyst** for `[balance]` items and gate regressions: edits `/data` only and reports gate deltas.
 
-## Feedback protocol (owner inbox)
-The loop script moves the owner's `.md` files from the inbox into `feedback/`. At the start of every iteration, for each file in `feedback/` not yet in `feedback/processed/`:
+## Feedback protocol (owner feedback)
+The owner commits feedback files into `feedback/` on `main`, or sends them as messages to the running session. A session message that starts with `type:` is treated exactly like a feedback file: record it as `feedback/processed/<yyyy-mm-dd>-message-<n>.md` before acting on it. At the start of every task, for each file in `feedback/` not yet in `feedback/processed/`:
 - `type: verdict` (or any line starting with `verdict:`) → copy into QUESTIONS.md under "Owner overrides" exactly as written. Owner decisions are final and override SPEC defaults and your own earlier choices.
 - `type: bug` → `[bug]` item at the top of the queue; failing regression test first.
 - `type: req` → `[feat]` item(s) referencing the SPEC section (or "owner-req" when SPEC does not cover it), placed per `priority:` (`now` = top of queue, `next` = top of the current phase, `later` = end of the current phase; default `next`).
@@ -75,7 +75,15 @@ When `SPEC.md` (or a newer `SPEC-V<n>.md`) exists and PROGRESS.md has no `SPEC i
 ## BACKLOG protocol
 Item format: `- [ ] (P0-01) [infra|feat|bug|balance|polish] title — acceptance: <objective check> — refs: <SPEC § | infra>`
 Loop-mode contract: one item end to end (implement → targeted tests + test:fast green → code-reviewer → qa-playtester → commit → push → PROGRESS/BACKLOG updated), then stop. Lanes other than main may take two items per iteration when both are small.
-Generation rule: when fewer than 3 actionable items remain, derive new items only from SPEC gaps, red gates in QUALITY.md, QA-filed bugs, or sweep findings; append 5 with objective acceptance criteria, ordered by value; never invent game systems (propose those in QUESTIONS.md). With no SPEC and no `[infra]` items left, write `IDLE.md` instead.
+Generation rule: when fewer than 3 actionable items remain, derive new items only from SPEC gaps, red gates in QUALITY.md, QA-filed bugs, or sweep findings; append 5 with objective acceptance criteria, ordered by value; never invent game systems (propose those in QUESTIONS.md). With no SPEC and no `[infra]` items left, nothing is actionable: say so and stop (local loop only: write `IDLE.md`).
+
+## Cloud task contract
+Agent execution runs as Claude Code on the web: one cloud task = one fresh clone of `main` on its own branch; the owner merges task branches into `main` through pull requests (or a routine pushes `main` directly when unrestricted branch pushes are enabled).
+- **Task start:** if `node_modules` is missing, or `package-lock.json` changed since the cached setup, run `npm ci` first.
+- **Order of work in every task:** (a) `feedback/` files not yet in `feedback/processed/` (feedback protocol); (b) BOOTSTRAP.md continuation while PROGRESS.md lacks the phrase "Bootstrap complete"; (c) SPEC intake when a SPEC version has no intake entry — stop after the intake commit; (d) backlog items one at a time per the loop-mode contract.
+- **Stop** after the number of completed items the task prompt names (default 3), at a hard blocker (logged under Known issues in PROGRESS.md), or when nothing is actionable (explain why in the final message). Never write `IDLE.md` in cloud mode; `STOP.md` does not exist in cloud mode. DONE.md rules are unchanged.
+- **Commit after every item and push the task branch before stopping.** Never rewrite history, never force-push.
+- **Merge instructions:** when told "merge main into this branch", `main` wins on `src/**` and `data/**`, this branch's additions are kept, all `<<<<<<<` markers are removed, then `npm run test:fast`, then push. The FULL `npm test` runs at phase completion and before DONE.md only.
 
 ## Phases
 P0 = engine and tooling (content-agnostic; listed in BACKLOG.md). P1+ are written by SPEC intake. A phase is complete only when all its items are done and the full suite is green.
@@ -84,4 +92,4 @@ P0 = engine and tooling (content-agnostic; listed in BACKLOG.md). P1+ are writte
 Write it only when: SPEC.md exists and is fully implemented (walk every section against the code), BACKLOG.md has no open items, QUALITY.md's current stage is green, and the full `npm test` is green. Lanes never write DONE.md.
 
 ## Lanes
-Main lane: this folder, branch `main`, `BACKLOG.md`, inbox `D:\Siege\inbox`. Other lanes: git worktrees at `D:\Siege\lanes\<name>` on branch `lane/<name>`, backlog `BACKLOG-<NAME>.md` whose first section is a hard file-scope boundary, inbox `D:\Siege\inbox-<name>`. Lanes never edit files outside their scope; out-of-scope needs go into the lane file's Log section and become main-lane items at merge. The main lane owns triage, merges and phase completion.
+Lanes are separate cloud tasks on their own branches, working from `BACKLOG-<LANE>.md`; that file's first section is a hard file-scope boundary. Lanes never edit files outside their scope; out-of-scope needs go into the lane file's Log section and become main-lane items at merge. Feedback files or messages addressed to a lane start with `lane: <name>`. The main lane works from `BACKLOG.md` and owns triage, phase completion and DONE.md; lanes never write DONE.md. The owner merges the main branch first, lane branches after.
