@@ -1,10 +1,10 @@
 # PROGRESS.md — Siege
 
 ## State
-Bootstrap complete (2026-09-05). Cloud mode adopted (feedback/cloud-mode.md; see CLAUDE.md "Cloud task contract"). P0-01 (effect vocabulary v1) is done: shields, tags, auras, projectiles, the ordered damage pipeline and the extended per-unit ledger are in, with `data/dev/` content that exercises every effect and trigger. No SPEC.md yet: all content in `data/dev/` is provisional (see QUESTIONS.md BOOT-01…15 and P0-01-01…13).
+Bootstrap complete (2026-09-05). Cloud mode adopted (feedback/cloud-mode.md; see CLAUDE.md "Cloud task contract"). P0-01 (effect vocabulary v1) and P0-B1 (sweep workers) are done: shields, tags, auras, projectiles, the ordered damage pipeline and the extended per-unit ledger are in, with `data/dev/` content that exercises every effect and trigger. No SPEC.md yet: all content in `data/dev/` is provisional (see QUESTIONS.md BOOT-01…15 and P0-01-01…13).
 
 ## Next action
-Run the loop on BACKLOG.md P0, top-down: P0-02 (attack types & projectiles).
+Run the loop on BACKLOG.md P0, top-down: P0-B2 (sweep robustness, filed by QA on P0-B1), then P0-02 (attack types & projectiles).
 
 ## Pipeline checks
 - `npm run check` — green (tsc + architecture test).
