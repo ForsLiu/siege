@@ -23,7 +23,7 @@ Stack: TypeScript (strict) · Vite · HTML canvas 2D · Vitest · zod · Node 22
 | `npx tsx tools/sweep.ts --seeds 50 --policies random [--start 1] [--workers 4]` | seeds × policies in worker threads; aggregate table (win rate, mean rounds survived, fight length mean/p95, exceptions); writes `bench/sweep-<stamp>.json` (gitignored) |
 | `npm run bench [-- --seconds 3]` | fights/sec and ticks/sec on a fixed dev matchup plus a host-independent budget (sim ticks per baseline hash) |
 
-Environment: `SIEGE_TEST_WORKERS` (vitest workers, default 4), `SIEGE_SWEEP_WORKERS` (sweep worker threads, default 4).
+Environment: `SIEGE_TEST_WORKERS` (vitest workers, default 4) and `SIEGE_SWEEP_WORKERS` (sweep worker threads, default 4) are separate knobs — the sweep never reads `SIEGE_TEST_WORKERS`. Both are trimmed and treat an empty value as unset, and both reject a value they cannot use (a non-integer, or a count below 1) rather than falling back silently: an invalid `SIEGE_TEST_WORKERS` used to make vitest collect nothing and still exit 0. They differ above the 64-worker cap — `SIEGE_TEST_WORKERS` clamps to it so a big host can still run the suite, while `SIEGE_SWEEP_WORKERS` is a CLI knob and errors like the `--workers` flag it mirrors.
 
 ## Playing (`npm run dev`)
 

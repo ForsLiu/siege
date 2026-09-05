@@ -3,7 +3,14 @@
 Owner overrides are final. Agent defaults stay open until the owner rules on them.
 
 ## Owner overrides (verdicts from feedback, verbatim)
-(none yet)
+
+### 2026-09-05 — feedback/2026-09-05-00-board-hex-verdict.md (board stays hex)
+
+verdict: The board stays a hex grid. Do not switch to square tiles.
+verdict: Rationale for the record: Siege is a simplified TFT (Tocker's Trials shape); hexes give six equidistant neighbours, unambiguous melee surrounds and uniform range rings, and the hex math and its tests already exist. Square tiles would be easier to draw and read, but they change every range and positioning rule and cost a rewrite for no design gain at this stage.
+verdict: Readability is fixed in the renderer, not the grid: clearly shaded player half vs enemy half, hover highlight on the hex under the cursor, and a range-ring preview when a unit is selected (see feedback file 02).
+
+Effect: BOOT-02 (odd-r offset hex board) is confirmed, not provisional. Renderer readability work is P0-20.
 
 ## Open decisions (agent defaults, with item id)
 
@@ -45,3 +52,15 @@ All of the following are provisional bootstrap choices (item id `BOOT`). Every n
 ### P0-B1 — erasable TypeScript only
 
 - **P0-B1-01**: the whole codebase (`src`, `tools`, `tests`) is restricted to *erasable* TypeScript — no constructor parameter properties, enums, namespaces or `import x = require`. The sweep spawns `tools/sweep-worker.ts` as a worker thread loaded by Node's own type stripping (Node >= 22.18), which rejects non-erasable syntax, and a `--import tsx` preload is not a fix: it resolves tsx against the process CWD and does not transform the worker's graph. Enforced by `erasableSyntaxOnly` in tsconfig (`npm run check`) and by a token scan in `tests/architecture.test.ts` (the fast tier, which is the per-item gate). `package.json` engines is `>=22.18` accordingly.
+
+### FB — owner playtest round 1 (feedback 2026-09-05)
+
+- **FB-01 Queue order for the playtest feedback** (items P0-15…P0-31): the six `req` files became 17 backlog items. `priority: now` files (01 dev modes, 02 inspector, 03 run HUD) sit at the top of P0, `priority: next` files (05 traits, 06 items, 04 combat FX) directly below them, and the pre-existing engine items P0-02…P0-14 after those. The one exception is the open bug `P0-B2` (sweep robustness), which keeps the top of the queue: bugs are top-of-queue by the feedback protocol, it predates this round and it blocks the sweep-based acceptance gates several of these items use.
+- **FB-02 Content for the new systems is provisional**: augments (P0-24), traits (P0-25/26) and items (P0-27…29) get `data/dev/` sample rows only, marked `_provisional`, exactly like the bootstrap units. Mechanism now, SPEC content later; SPEC intake retires the samples.
+- **FB-03 Combat FX ordered after traits and items**: feedback file 04 (`priority: next`) asks for projectile trails and impact flashes, which need the projectile travel model from P0-02 (attack types & projectiles); the trait and item files have no such dependency. So within the `next` block the order is traits → items → FX, and the FX item stays behind the systems it draws.
+- **FB-04 `dev:` commands are gated by RunConfig, not by build-time stripping**: the dev cheats have to be in the sim (they are commands in the log, replays must reproduce them), so the sim keeps the code and rejects every `dev:` command with a reason unless `RunConfig.devCommands` is set. Only dev builds set it; the *panel* is still stripped from production by the existing dev-chunk mechanism. This keeps `fight()`/`run` pure and the production build free of any dev UI.
+
+### P0-B3 — test worker count
+
+- **P0-B3-01 Invalid vs excessive `SIEGE_TEST_WORKERS`**: `tools/testWorkers.ts` throws on a value vitest cannot use (non-integer, or below 1 — the P0-B3 bug, where a negative made vitest collect nothing and still exit 0) but *clamps* anything above `TEST_WORKERS_MAX = 64` instead of throwing. Rejecting a large value would mean a host configured for 96 workers could not run the suite at all, including `npm run check`; clamping keeps the lane-starvation cap CLAUDE.md asks for without ever bricking a run. The cap itself is an agent default: CLAUDE.md fixes only the default of 4.
+- **P0-B3-02 Where the parser lives**: the P0-B3 acceptance text says "`resolveTestWorkers(env)` exported from the config". It is exported from `tools/testWorkers.ts` and *called* by `vitest.config.ts`, because a vitest config's default export is the config object and tests cannot import a helper from it without loading vitest's own config machinery. Same validation, importable from the fast tier.

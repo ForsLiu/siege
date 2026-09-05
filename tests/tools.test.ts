@@ -1,9 +1,13 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { flagBool, flagInt, flagSeed, flagString, parseArgs, UsageError } from '../tools/args.ts';
 import { getPolicy, policyNames } from '../tools/policies/index.ts';
-import { runSweep } from '../tools/sweep.ts';
+import { aggregate, parsePolicies, prepareOutPath, resolveWorkers, runSweep, type PolicyAggregate } from '../tools/sweep.ts';
+import type { SweepJobResult } from '../tools/sweep-worker.ts';
 
 describe('tools/args', () => {
   it('parses --key value, --key=value, bare flags and positionals', () => {
@@ -62,4 +66,108 @@ describe('tools/sweep worker (P0-B1)', () => {
     const withoutTiming = (rs: typeof results): unknown[] => rs.map(({ ms: _ms, ...rest }) => rest);
     expect(withoutTiming(results)).toEqual(withoutTiming(await runSweep([1, 2, 3, 4], ['random'], 1)));
   }, 60_000);
+});
+
+describe('tools/sweep robustness (P0-B2)', () => {
+  const crash = { workerUrl: new URL('./fixtures/crash-worker.ts', import.meta.url), workerData: { role: 'crash' } };
+
+  it('a worker that exits non-zero leaves the surviving results and marks its job ok:false', async () => {
+    // The fixture worker dies on any even seed, and there is exactly one here: the second
+    // worker takes seed 2 to the grave while the first drains 1, 3 and 5. A crash costs one
+    // job instead of the whole sweep.
+    const results = await runSweep([1, 2, 3, 5], ['random'], 2, crash);
+    expect(results.map((r) => r.seed)).toEqual([1, 2, 3, 5]);
+    const dead = results.find((r) => r.seed === 2) as SweepJobResult;
+    expect(dead.ok).toBe(false);
+    expect(dead.error).toMatch(/worker exited with 7/);
+    for (const r of results.filter((r) => r.seed !== 2)) {
+      expect(r.ok, `seed ${r.seed}: ${r.error ?? ''}`).toBe(true);
+      expect(r.roundsSurvived).toBeGreaterThan(0);
+    }
+  }, 60_000);
+
+  it('every job still gets a result when no worker survives', async () => {
+    // Both workers die on their first (even) job, so seeds 2 and 4 fail through the exit
+    // handler and seeds 6 and 8 are never assigned at all — the two different loss paths.
+    const results = await runSweep([2, 4, 6, 8], ['random'], 2, crash);
+    expect(results.map((r) => r.seed)).toEqual([2, 4, 6, 8]);
+    for (const r of results) {
+      expect(r.ok, `seed ${r.seed}`).toBe(false);
+      expect(r.error).toBeTruthy();
+    }
+    expect(results.filter((r) => /worker exited with 7/.test(r.error ?? ''))).toHaveLength(2);
+    expect(results.filter((r) => /no worker survived/.test(r.error ?? ''))).toHaveLength(2);
+  }, 60_000);
+
+  it('a sweep survives a worker that cannot even be constructed', async () => {
+    // An un-cloneable workerData makes `new Worker` throw synchronously. Before P0-B2's fix
+    // that rejected runSweep itself and discarded everything.
+    const results = await runSweep([1, 2], ['random'], 2, { workerData: { role: 'sweep', fn: () => 1 } });
+    expect(results.map((r) => r.seed)).toEqual([1, 2]);
+    for (const r of results) expect(r.ok).toBe(false);
+  }, 60_000);
+
+  it('de-duplicates policies and (seed, policy) jobs', async () => {
+    expect(parsePolicies('random, random,random')).toEqual(['random']);
+    expect(parsePolicies(' random ,, random')).toEqual(['random']);
+    expect(() => parsePolicies('')).toThrow(UsageError);
+    expect(() => parsePolicies('nope')).toThrow(/unknown policy nope/);
+    const results = await runSweep([5, 5], ['random', 'random'], 1);
+    expect(results).toHaveLength(1);
+  }, 60_000);
+
+  it('averages ms over the jobs that actually ran', () => {
+    const base = { policy: 'random', ok: true, error: null, outcome: 'loss' as const, roundsSurvived: 3, finalHp: 0, finalGold: 0, finalLevel: 2, commandCount: 9, fightTicks: [30], finalHash: 'x' };
+    const ran: SweepJobResult = { ...base, seed: 1, ms: 30 };
+    const never: SweepJobResult = { ...base, seed: 2, ok: false, error: 'no worker survived to run this job', outcome: null, roundsSurvived: 0, fightTicks: [], finalHash: null, ms: 0 };
+    const agg = aggregate([ran, never], ['random'])[0] as PolicyAggregate;
+    expect(agg.runs).toBe(2);
+    expect(agg.exceptions).toBe(1);
+    expect(agg.meanMs).toBe(30);
+  });
+
+  it('validates SIEGE_SWEEP_WORKERS exactly like --workers, bar trimming', () => {
+    expect(resolveWorkers(parseArgs([]), {})).toBe(4);
+    expect(resolveWorkers(parseArgs([]), { SIEGE_SWEEP_WORKERS: '8' })).toBe(8);
+    // An env value is trimmed and a blank one counts as unset — the one deliberate difference
+    // from the flag, which rejects both (QA on P0-B2).
+    expect(resolveWorkers(parseArgs([]), { SIEGE_SWEEP_WORKERS: '' })).toBe(4);
+    expect(resolveWorkers(parseArgs([]), { SIEGE_SWEEP_WORKERS: '   ' })).toBe(4);
+    expect(resolveWorkers(parseArgs([]), { SIEGE_SWEEP_WORKERS: ' 8 ' })).toBe(8);
+    // The flag still wins over the environment.
+    expect(resolveWorkers(parseArgs(['--workers', '2']), { SIEGE_SWEEP_WORKERS: '8' })).toBe(2);
+    for (const bad of ['-5', '0', '99999', '1.5', 'abc']) {
+      expect(() => resolveWorkers(parseArgs([]), { SIEGE_SWEEP_WORKERS: bad }), bad).toThrow(UsageError);
+      expect(() => resolveWorkers(parseArgs([]), { SIEGE_SWEEP_WORKERS: bad }), bad).toThrow(/SIEGE_SWEEP_WORKERS/);
+    }
+  });
+
+  it('the CLI refuses a bad --out before running any job', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'siege-sweep-cli-'));
+    const cli = fileURLToPath(new URL('../tools/sweep.ts', import.meta.url));
+    const t0 = Date.now();
+    // 400 seeds would take many seconds to sweep; failing fast is the point of the check.
+    const r = spawnSync(process.execPath, ['--experimental-strip-types', cli, '--seeds', '400', '--out', dir], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      cwd: fileURLToPath(new URL('..', import.meta.url)),
+    });
+    expect(r.status, r.stderr).toBe(1);
+    expect(r.stderr).toMatch(/--out is a directory/);
+    expect(Date.now() - t0).toBeLessThan(20_000);
+    rmSync(dir, { recursive: true, force: true });
+  }, 60_000);
+
+  it('prepares --out before any job runs: nested dirs are created, a directory path is refused', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'siege-sweep-'));
+    const nested = join(dir, 'a', 'b', 'report.json');
+    expect(prepareOutPath(nested)).toBe(resolve(nested));
+    expect(existsSync(dirname(nested))).toBe(true);
+    expect(() => prepareOutPath(dir)).toThrow(UsageError);
+    // A file where a directory has to be is refused too, rather than throwing ENOTDIR later.
+    const file = join(dir, 'file.txt');
+    writeFileSync(file, 'x', 'utf8');
+    expect(() => prepareOutPath(join(file, 'report.json'))).toThrow(UsageError);
+    rmSync(dir, { recursive: true, force: true });
+  });
 });
