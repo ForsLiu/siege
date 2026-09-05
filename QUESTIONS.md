@@ -4,6 +4,16 @@ Owner overrides are final. Agent defaults stay open until the owner rules on the
 
 ## Owner overrides (verdicts from feedback, verbatim)
 
+### 2026-09-05 — feedback/2026-09-05-07-triage-verdict.md (backlog triage & build order)
+
+verdict: Owner-request items (refs: owner-req; currently P0-15 … P0-31) outrank every QA-filed [bug] item. Move P0-B4, P0-B5 and P0-B6 to the end of P0 (after P0-14) now, tagged "(deferred)": they are tooling ergonomics, not gameplay or gate defects.
+verdict: Build order until further notice, top-down: P0-15, P0-16, P0-09, P0-17, P0-18, P0-19, P0-20, P0-21, P0-22, P0-23, P0-24, P0-25, P0-26, P0-27, P0-28, P0-29, P0-30, P0-31, then P0-02, P0-03, P0-04, P0-05, P0-06, P0-07, P0-08, P0-10, P0-11, P0-12, P0-13, P0-14, then the deferred bugs. Rewrite BACKLOG.md in exactly this order.
+verdict: Add this triage rule to CLAUDE.md under "Subagent protocol": a QA-filed bug goes to the top of the queue only if it (a) breaks the playable dev build or a money path, (b) breaks determinism or replay hashes, or (c) makes the per-item gate report green without running the tests through the documented path. Everything else — CLI ergonomics, flag typos, exotic inputs such as FIFOs, dev-tool edge cases — is filed at the END of the current phase as "[bug] (deferred)". QA findings that do not fail the item's acceptance criteria are filed as "[polish] (deferred)" at the end of the phase, never as top-of-queue bugs, and are not worked on inside the item. At most one deferred QA bug may be pulled forward per task, and only when it blocks the item being built.
+verdict: Feedback processing, spec intake and bootstrap continuation never count toward a task's item budget; only completed backlog items do.
+verdict: PROGRESS.md "Next action" always names the next owner-request item first.
+
+Effect: BACKLOG.md P0 is rewritten in exactly the verdict's order (owner-request items first, P0-B4/B5/B6 deferred to the end of P0 and tagged "(deferred)"); the triage rule is added to CLAUDE.md under "Subagent protocol"; PROGRESS.md "Next action" names the next owner-request item first; feedback processing, spec intake and bootstrap continuation do not count toward a task's item budget.
+
 ### 2026-09-05 — feedback/2026-09-05-00-board-hex-verdict.md (board stays hex)
 
 verdict: The board stays a hex grid. Do not switch to square tiles.

@@ -4,7 +4,7 @@
 Bootstrap complete (2026-09-05). Cloud mode adopted (feedback/cloud-mode.md; see CLAUDE.md "Cloud task contract"). P0-01 (effect vocabulary v1), P0-B1 (sweep workers), P0-B2 (sweep robustness) and P0-B3 (test worker count) are done: shields, tags, auras, projectiles, the ordered damage pipeline and the extended per-unit ledger are in, with `data/dev/` content that exercises every effect and trigger. No SPEC.md yet: all content in `data/dev/` is provisional (see QUESTIONS.md BOOT-01…15 and P0-01-01…13). Owner playtest round 1 (7 feedback files) is processed: the hex-board verdict is recorded verbatim under Owner overrides, and the six requests became items P0-15…P0-31 at the top of P0 (dev cheat commands and panel, battle sandbox, unit inspector, run HUD, augments, traits, items, combat FX) — see QUESTIONS.md FB-01…FB-04 for the ordering and the gating decisions.
 
 ## Next action
-Run the loop on BACKLOG.md P0, top-down: P0-B4 (CLIs ignore typo'd flags), P0-B5 (sweep watchdog + CLI failure-path test), P0-B6 (`--maxWorkers=-5` still empties the gate), then the owner playtest items from P0-15 (dev commands, dev panel, sandbox, inspector, run HUD).
+Run the loop on BACKLOG.md P0 top-down in the owner's verdict order (feedback/processed/2026-09-05-07-triage-verdict.md): **P0-15 (`dev:` command namespace)**, then P0-16 (dev panel), P0-09 (UI shell hardening), P0-17/P0-18 (battle sandbox), P0-19/P0-20 (unit inspector). P0-B4, P0-B5 and P0-B6 are deferred to the end of P0.
 
 ## Pipeline checks
 - `npm run check` — green (tsc + architecture test).
@@ -32,6 +32,7 @@ See README.md: `dev`, `build`, `preview`, `check`, `test`, `test:fast`, `fight`,
 - Hook chains are cut at `combat.maxHookDepth` (8): effects beyond that depth silently do not run.
 
 ## Log
+- 2026-09-05 fb: triage verdict — owner-request items outrank QA-filed bugs; BACKLOG.md P0 rewritten in the verdict's order, P0-B4/B5/B6 deferred to the end of P0, triage rule added to CLAUDE.md "Subagent protocol", verdict recorded verbatim in QUESTIONS.md
 - 2026-09-05 P0-B3 test worker count — an invalid `SIEGE_TEST_WORKERS` made vitest collect nothing and still exit 0; `tools/testWorkers.ts` now throws on an unusable value and clamps above the cap (QUESTIONS.md P0-B3-01/02). code-reviewer APPROVE with minors (clamp instead of reject, spawn timeout, pruned child env) and qa-playtester PASS on all four criteria with 4 findings — 3 fixed here (stale docs, no positive end-to-end case, spawn assertions passing for the wrong reason), the flag route filed as P0-B6
 - 2026-09-05 fb: owner playtest round 1 — hex verdict recorded verbatim; 6 requests filed as P0-15…P0-31 (QUESTIONS.md FB-01…FB-04)
 - 2026-09-05 P0-B2 sweep robustness — a dead worker no longer discards the sweep (one result per (policy, seed) always), `--out` and `SIEGE_SWEEP_WORKERS` are pre-flighted, duplicate policies de-duplicated; code-reviewer REQUEST-CHANGES (Major: a synchronous `new Worker` throw still sank the sweep) fixed with a regression test, qa-playtester PASS on all four acceptance criteria with 8 findings — 2 fixed here (meanMs diluted by jobs that never ran; the env/flag whitespace parity claim), the rest filed as P0-B3/B4/B5
