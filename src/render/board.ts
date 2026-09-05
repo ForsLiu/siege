@@ -50,12 +50,14 @@ export class BoardRenderer {
   private width = 0;
   private height = 0;
 
-  constructor(
-    private readonly canvas: HTMLCanvasElement,
-    private readonly board: BoardConfig,
-  ) {
+  private readonly canvas: HTMLCanvasElement;
+  private readonly board: BoardConfig;
+
+  constructor(canvas: HTMLCanvasElement, board: BoardConfig) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2D canvas context unavailable');
+    this.canvas = canvas;
+    this.board = board;
     this.ctx = ctx;
     this.resize();
   }

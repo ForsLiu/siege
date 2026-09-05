@@ -16,12 +16,14 @@ export interface RawContentFiles {
 }
 
 export class ContentError extends Error {
-  constructor(
-    public readonly file: string,
-    message: string,
-  ) {
+  /** Plain field, not a constructor parameter property: the sweep worker loads this module
+   *  under Node's strip-only type stripping, which rejects non-erasable syntax (P0-B1). */
+  readonly file: string;
+
+  constructor(file: string, message: string) {
     super(`${file}: ${message}`);
     this.name = 'ContentError';
+    this.file = file;
   }
 }
 
