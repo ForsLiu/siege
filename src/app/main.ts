@@ -9,11 +9,12 @@ import { fight, type FightResult } from '../sim/fight.ts';
 import type { Cell } from '../sim/hex.ts';
 import { isPlayerCell } from '../sim/hex.ts';
 import { fightRulesFrom } from '../sim/rules.ts';
-import { boardUnitAt, createRun, currentEncounter, findUnit, type RunState } from '../sim/run.ts';
+import { boardUnitAt, createRun, currentEncounter, findUnit, shopTierCount, type RunState } from '../sim/run.ts';
 import { createPauseScreen, createResultsScreen, createTitleScreen } from '../ui/screens.ts';
 import { createRunUi, type RunUiMode } from '../ui/runUi.ts';
 import { initialScreen, reduceScreen, type ScreenEvent, type ScreenState } from './screens.ts';
 import type { DevOverlay } from '../dev/overlay.ts';
+import type { DevPanel } from '../dev/panel.ts';
 
 const content = loadBrowserContent();
 const app = document.getElementById('app') as HTMLElement;
@@ -39,6 +40,7 @@ let speed = 1;
 let playback: Playback | null = null;
 let message = '';
 let overlay: DevOverlay | null = null;
+let devPanel: DevPanel | null = null;
 let fps = 0;
 let devFightResult: FightResult | null = null;
 /** Final frame of the last dev fight, kept so the idle screen does not rebuild the timeline per frame. */
@@ -149,13 +151,23 @@ function startRun(seed: number): void {
   refreshUi();
 }
 
-function dispatch(cmd: Command): void {
-  if (!run || playback) return;
+/** The single command path: UI clicks, hotkeys and the dev panel all go through here. */
+function dispatch(cmd: Command): { ok: boolean; reason: string | null } {
+  if (!run) {
+    message = 'no run in progress';
+    refreshUi();
+    return { ok: false, reason: message };
+  }
+  if (playback) {
+    message = 'combat is playing';
+    refreshUi();
+    return { ok: false, reason: message };
+  }
   const res = applyCommand(run, cmd, content);
   if (!res.ok) {
     message = res.reason;
     refreshUi();
-    return;
+    return { ok: false, reason: res.reason };
   }
   message = '';
   if (selectedUid !== null && !findUnit(run, selectedUid)) selectedUid = null;
@@ -173,6 +185,7 @@ function dispatch(cmd: Command): void {
     finishRun();
   }
   refreshUi();
+  return { ok: true, reason: null };
 }
 
 function finishRun(): void {
@@ -206,6 +219,16 @@ function uiMode(): RunUiMode {
 
 function refreshUi(): void {
   if (screen.screen === 'run' && run) runUi.update({ state: run, content, mode: uiMode(), selectedUid, speed, message });
+  devPanel?.update({
+    seed: screen.screen === 'title' ? null : runSeed,
+    contentHash: content.contentHash,
+    round: run?.round ?? null,
+    phase: run?.phase ?? null,
+    gold: run?.gold ?? null,
+    invinciblePieces: run?.dev.invinciblePieces ?? false,
+    invinciblePlayer: run?.dev.invinciblePlayer ?? false,
+    message,
+  });
 }
 
 // ---- input ----
@@ -245,12 +268,21 @@ window.addEventListener('keydown', (e) => {
     overlay?.toggle();
     return;
   }
+  if (__SIEGE_DEV__ && e.key === 'F2') {
+    e.preventDefault();
+    devPanel?.toggle();
+    refreshUi();
+    return;
+  }
   if (e.key === 'Escape') {
     emit({ type: 'togglePause' });
     return;
   }
   if (screen.screen !== 'run' || !run || screen.paused || playback) return;
   if (e.target instanceof HTMLInputElement) return;
+  // Keys typed into the dev panel's own controls stay there (a focused button would otherwise
+  // re-fire on Space while Space also starts combat).
+  if (devPanel && e.target instanceof Node && devPanel.root.contains(e.target)) return;
   switch (e.key) {
     case 'r':
     case 'R':
@@ -353,6 +385,23 @@ if (__SIEGE_DEV__) {
   import(/* @vite-ignore */ devModulePath)
     .then((dev: typeof import('../dev/index.ts')) => {
       overlay = dev.createOverlay(app);
+      const cells: Cell[] = [];
+      for (let row = 0; row < content.board.rows; row++) {
+        for (let col = 0; col < content.board.cols; col++) {
+          const cell: Cell = { col, row };
+          if (isPlayerCell(cell, content.board)) cells.push(cell);
+        }
+      }
+      devPanel = dev.createDevPanel(app, {
+        // The panel goes through the same dispatch as a click or a hotkey: the sim validates,
+        // the command lands in the log, and a rejection shows up as the usual message.
+        dispatch: (cmd) => dispatch(cmd),
+        units: content.units.map((u) => ({ id: u.id, name: u.name, cost: u.cost })),
+        maxStar: content.rules.economy.maxStar,
+        tiers: shopTierCount(content),
+        cells,
+      });
+      refreshUi();
     })
     .catch((e: unknown) => console.warn('dev tools unavailable', e));
 }

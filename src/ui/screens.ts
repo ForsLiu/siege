@@ -50,7 +50,7 @@ export function createTitleScreen(parent: HTMLElement, devBoards: readonly strin
   btnDev.addEventListener('click', () => cb.onDevFight(selLeft.value, selRight.value, seedFrom(seedInput)));
   devRow.append(el('label', 'label', 'Dev fight'), selLeft, el('span', 'label', 'vs'), selRight, btnDev);
 
-  root.append(seedRow, btnRun, devRow, el('p', 'footnote', `content ${contentHash.slice(0, 16)} · Esc pause · F1 dev overlay`));
+  root.append(seedRow, btnRun, devRow, el('p', 'footnote', `content ${contentHash.slice(0, 16)} · Esc pause · F1 dev overlay · F2 dev panel`));
   parent.appendChild(root);
   return {
     root,

@@ -12,7 +12,7 @@ Stack: TypeScript (strict) · Vite · HTML canvas 2D · Vitest · zod · Node 22
 | Command | What it does |
 | --- | --- |
 | `npm install` | project-local dependencies (Node ≥ 22) |
-| `npm run dev` | playable dev build at http://localhost:5173 with dev tools (F1 overlay, `/__data/` endpoint) |
+| `npm run dev` | playable dev build at http://localhost:5173 with dev tools (F1 overlay, F2 dev panel, `/__data/` endpoint) |
 | `npm run build` | production build into `dist/` (no dev tools, no endpoint; verified by `tests/slow/build.test.ts`) |
 | `npm run preview` | serve the production build |
 | `npm run check` | `tsc --noEmit` + the architecture test |
@@ -29,7 +29,7 @@ Environment: `SIEGE_TEST_WORKERS` (vitest workers, default 4) and `SIEGE_SWEEP_W
 
 - **Title**: enter a seed (blank = random) → **New run**. **Dev fight** plays two dev boards through the same `fight()` the headless tools use.
 - **Run**: shop row (click to buy), bench row (click to select), board (click a player-half cell to place the selected unit; click a board unit to select it; click the selected board unit again to bench it; click another unit while one is selected to swap). Buttons: Reroll, Buy XP, Sell, Start combat / Next round, speed 1×/2×/4×, Pause.
-- Hotkeys: `R` reroll · `X` buy xp · `S` sell selected · `Space` start combat / next round · `1` `2` `3` speed 1×/2×/4× · `Esc` pause · `F1` dev overlay (fps, tick, round hash, content hash, seed).
+- Hotkeys: `R` reroll · `X` buy xp · `S` sell selected · `Space` start combat / next round · `1` `2` `3` speed 1×/2×/4× · `Esc` pause · `F1` dev overlay (fps, tick, round hash, content hash, seed) · `F2` dev panel (a button per `dev:` cheat, plus the seed and content hash to quote in a bug report).
 - **Results** after victory (survive the last encounter) or defeat (hp 0 / abandon) → back to Title.
 
 ## Layout

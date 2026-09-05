@@ -19,7 +19,10 @@ function walk(dir: string): string[] {
 
 // `devCommands:!0` / `devCommands:true` would mean a production bundle creating runs that
 // accept the `dev:` cheat namespace (P0-15); the minifier folds the DEV branch to `!1`.
-const FORBIDDEN = ['__data/', 'dev-overlay', 'siege-dev-data', 'writeDataFile', 'readDataFile', 'DATA_ENDPOINT', 'dev/index', 'createOverlay', 'dev tools unavailable', '__SIEGE_DEV__', 'devCommands:!0', 'devCommands: !0', 'devCommands:true', 'devCommands: true'];
+const FORBIDDEN = ['__data/', 'dev-overlay', 'siege-dev-data', 'writeDataFile', 'readDataFile', 'DATA_ENDPOINT', 'dev/index', 'createOverlay', 'dev tools unavailable', '__SIEGE_DEV__', 'devCommands:!0', 'devCommands: !0', 'devCommands:true', 'devCommands: true', 'dev-panel', 'createDevPanel', 'DEV PANEL',
+  // String literals survive minification, so these catch a leak of the pure panel model too
+  // (identifiers like `devPanelButtons` are renamed and would not).
+  'Invincible pieces', 'Skip round (win)', 'Open shop (tier '];
 
 function buildAndScan(nodeEnv: string | undefined): { files: string[]; hits: string[] } {
   const env = { ...process.env };
