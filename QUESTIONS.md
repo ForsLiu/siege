@@ -3,7 +3,14 @@
 Owner overrides are final. Agent defaults stay open until the owner rules on them.
 
 ## Owner overrides (verdicts from feedback, verbatim)
-(none yet)
+
+### 2026-09-05 — feedback/2026-09-05-00-board-hex-verdict.md (board stays hex)
+
+verdict: The board stays a hex grid. Do not switch to square tiles.
+verdict: Rationale for the record: Siege is a simplified TFT (Tocker's Trials shape); hexes give six equidistant neighbours, unambiguous melee surrounds and uniform range rings, and the hex math and its tests already exist. Square tiles would be easier to draw and read, but they change every range and positioning rule and cost a rewrite for no design gain at this stage.
+verdict: Readability is fixed in the renderer, not the grid: clearly shaded player half vs enemy half, hover highlight on the hex under the cursor, and a range-ring preview when a unit is selected (see feedback file 02).
+
+Effect: BOOT-02 (odd-r offset hex board) is confirmed, not provisional. Renderer readability work is P0-20.
 
 ## Open decisions (agent defaults, with item id)
 
