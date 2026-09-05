@@ -11,6 +11,10 @@ describe('vitest worker count (P0-B3)', () => {
     expect(resolveTestWorkers({ SIEGE_TEST_WORKERS: '1' })).toBe(1);
     expect(resolveTestWorkers({ SIEGE_TEST_WORKERS: ' 8 ' })).toBe(8);
     expect(resolveTestWorkers({ SIEGE_TEST_WORKERS: '64' })).toBe(64);
+    // Above the cap is clamped, not refused: a host configured for 96 workers must still be
+    // able to run the suite (QUESTIONS.md P0-B3-01).
+    expect(resolveTestWorkers({ SIEGE_TEST_WORKERS: '96' })).toBe(64);
+    expect(resolveTestWorkers({ SIEGE_TEST_WORKERS: '4\n' })).toBe(4);
     // Blank counts as unset, exactly like SIEGE_SWEEP_WORKERS.
     expect(resolveTestWorkers({ SIEGE_TEST_WORKERS: '' })).toBe(4);
     expect(resolveTestWorkers({ SIEGE_TEST_WORKERS: '   ' })).toBe(4);
@@ -19,7 +23,7 @@ describe('vitest worker count (P0-B3)', () => {
   it('refuses a value vitest would turn into an empty run', () => {
     // -5 used to reach maxWorkers unchanged: vitest then collected no file at all and the
     // process still exited 0, so `npm run test:fast` looked green having run nothing.
-    for (const bad of ['-5', '-1', '0', '1.5', 'abc', '65', '1e2']) {
+    for (const bad of ['-5', '-1', '0', '1.5', 'abc', '1e2', '+4', '0x10']) {
       expect(() => resolveTestWorkers({ SIEGE_TEST_WORKERS: bad }), bad).toThrow(/SIEGE_TEST_WORKERS/);
     }
   });
@@ -29,8 +33,11 @@ describe('vitest worker count (P0-B3)', () => {
     const r = spawnSync(process.execPath, [vitest, 'run', 'tests/hex.test.ts'], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
-      timeout: 120_000,
-      env: { ...process.env, SIEGE_TEST_WORKERS: '-5' },
+      // Below the 120 s test timeout, so a hung child is reported as a spawn timeout with its
+      // output rather than as a bare harness timeout.
+      timeout: 60_000,
+      // Vitest's own pool variables are dropped: the child must not look like a worker of this run.
+      env: { ...process.env, VITEST_POOL_ID: undefined, VITEST_WORKER_ID: undefined, SIEGE_TEST_WORKERS: '-5' },
     });
     expect(r.status, `stdout: ${r.stdout}\nstderr: ${r.stderr}`).not.toBe(0);
     expect(`${r.stdout}${r.stderr}`).toMatch(/SIEGE_TEST_WORKERS/);

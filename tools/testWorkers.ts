@@ -6,7 +6,9 @@
 // having run nothing. An unusable value is now a loud failure instead.
 //
 // It is a separate knob from SIEGE_SWEEP_WORKERS (the sweep's own thread cap) and is parsed the
-// same way: trimmed, blank means unset, integer in [1, 64].
+// same way: trimmed, blank means unset. Only an unusable value throws (a non-integer, or a count
+// below 1, which is the bug above). A count above the cap is clamped rather than rejected: a big
+// host asking for more workers than we want should still be able to run the suite at all.
 export const TEST_WORKERS_DEFAULT = 4;
 export const TEST_WORKERS_MAX = 64;
 
@@ -16,6 +18,5 @@ export function resolveTestWorkers(env: Record<string, string | undefined>): num
   if (!/^\d+$/.test(raw)) throw new Error(`SIEGE_TEST_WORKERS must be a positive integer, got ${JSON.stringify(env.SIEGE_TEST_WORKERS)}`);
   const n = Number.parseInt(raw, 10);
   if (n < 1) throw new Error(`SIEGE_TEST_WORKERS must be >= 1, got ${n}`);
-  if (n > TEST_WORKERS_MAX) throw new Error(`SIEGE_TEST_WORKERS must be <= ${TEST_WORKERS_MAX}, got ${n}`);
-  return n;
+  return Math.min(n, TEST_WORKERS_MAX);
 }
