@@ -16,6 +16,7 @@ Run the loop on BACKLOG.md P0, top-down: P0-01 (effect vocabulary v1).
 - `npx tsx tools/sweep.ts --seeds 20 --policies random` — 20 runs × 4 workers, 0 exceptions, ~0.3 s.
 - `npm run bench` — ~690 fights/s, ~540k ticks/s on the a-vs-b dev matchup (this host; P0-10 records the budget).
 - `npm run build` — production bundle contains no dev endpoint / overlay / dev client (grep test).
+- inbox OK 2026-09-05 00:09
 
 ## Commands
 See README.md: `dev`, `build`, `preview`, `check`, `test`, `test:fast`, `fight`, `sim`, `sweep` (`npx tsx tools/sweep.ts`), `bench`.
