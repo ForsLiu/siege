@@ -8,7 +8,7 @@ Do the sections in order. Commit at every green point. Stop when §9 is done.
 - Verify Node ≥ 22, npm, git. If Node is missing, install it (`winget install OpenJS.NodeJS.LTS`) and continue.
 - `npm init -y`; devDependencies: typescript, vite, vitest, tsx, @types/node; dependency: zod. Exact versions in package.json.
 - `tsconfig.json`: strict, ES2022 target, bundler resolution. Relative imports or path aliases — pick one, stay consistent.
-- `vitest.config.ts`: tests in `tests/**/*.test.ts`; worker count from `process.env.SIEGE_TEST_WORKERS` (default 4); `test:fast` excludes `tests/slow/**`.
+- `vitest.config.ts`: tests in `tests/**/*.test.ts`; worker count from `process.env.SIEGE_TEST_WORKERS` via `tools/testWorkers.ts` (default 4, integer 1..64, invalid values throw); `test:fast` excludes `tests/slow/**`.
 - package.json scripts: `dev`, `build`, `preview`, `check` (tsc --noEmit + architecture test), `test` (full), `test:fast`, `fight`, `sim`, `sweep`, `bench`.
 - `.gitignore` already exists — extend if needed. README.md: how to run, play, test, and use every tool.
 

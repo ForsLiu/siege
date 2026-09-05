@@ -1,0 +1,38 @@
+// P0-B3: the per-item gate must never report green having run nothing.
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { REPO_ROOT } from '../src/data/node.ts';
+import { resolveTestWorkers } from '../tools/testWorkers.ts';
+
+describe('vitest worker count (P0-B3)', () => {
+  it('accepts a positive integer, trims it, and defaults to 4', () => {
+    expect(resolveTestWorkers({})).toBe(4);
+    expect(resolveTestWorkers({ SIEGE_TEST_WORKERS: '1' })).toBe(1);
+    expect(resolveTestWorkers({ SIEGE_TEST_WORKERS: ' 8 ' })).toBe(8);
+    expect(resolveTestWorkers({ SIEGE_TEST_WORKERS: '64' })).toBe(64);
+    // Blank counts as unset, exactly like SIEGE_SWEEP_WORKERS.
+    expect(resolveTestWorkers({ SIEGE_TEST_WORKERS: '' })).toBe(4);
+    expect(resolveTestWorkers({ SIEGE_TEST_WORKERS: '   ' })).toBe(4);
+  });
+
+  it('refuses a value vitest would turn into an empty run', () => {
+    // -5 used to reach maxWorkers unchanged: vitest then collected no file at all and the
+    // process still exited 0, so `npm run test:fast` looked green having run nothing.
+    for (const bad of ['-5', '-1', '0', '1.5', 'abc', '65', '1e2']) {
+      expect(() => resolveTestWorkers({ SIEGE_TEST_WORKERS: bad }), bad).toThrow(/SIEGE_TEST_WORKERS/);
+    }
+  });
+
+  it('a real vitest run with an invalid worker count fails loudly instead of collecting nothing', () => {
+    const vitest = fileURLToPath(new URL('../node_modules/vitest/vitest.mjs', import.meta.url));
+    const r = spawnSync(process.execPath, [vitest, 'run', 'tests/hex.test.ts'], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      timeout: 120_000,
+      env: { ...process.env, SIEGE_TEST_WORKERS: '-5' },
+    });
+    expect(r.status, `stdout: ${r.stdout}\nstderr: ${r.stderr}`).not.toBe(0);
+    expect(`${r.stdout}${r.stderr}`).toMatch(/SIEGE_TEST_WORKERS/);
+  }, 120_000);
+});
