@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.vite/
+bench/
+telemetry/
+*.log
+STOP.md
+IDLE.md
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
