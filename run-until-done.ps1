@@ -1,4 +1,4 @@
-# run-until-done.ps1 (Siege v3) - unattended build loop.
+# run-until-done.ps1 (Siege v3.1) - unattended build loop; also finishes BOOTSTRAP.md if it is incomplete.
 # One backlog item per iteration, until DONE.md, STOP.md, or the time cap.
 # Run from the repo root (main lane) or from a lane worktree (lane auto-detected):
 #   .\run-until-done.ps1                          main lane, opus, 48 h cap
@@ -62,6 +62,8 @@ You are the $Lane lane of the Siege project. Read CLAUDE.md, PROGRESS.md and $Ba
 
 STEP 0 - recovery: if the working tree has uncommitted changes from an interrupted iteration, bring them to a green, committed state (or revert them) and log it in PROGRESS.md before anything else.
 
+STEP 0b - bootstrap: if BOOTSTRAP.md exists and PROGRESS.md does not contain the phrase 'Bootstrap complete', continue BOOTSTRAP.md from the first unfinished section (inspect the repo to see what already exists), finish at least one section and as many more as fit comfortably, committing at every green point; when section 9 is done write 'Bootstrap complete' into PROGRESS.md and commit. That is this iteration's whole work: stop after it. Skip everything below.
+
 STEP 1 - owner feedback: for every file in feedback/ that is not yet in feedback/processed/, apply the feedback protocol in CLAUDE.md (verdict lines copied into QUESTIONS.md exactly as written; bugs become top-of-queue [bug] items with a failing regression test first; requests, balance notes and pipeline notes become items at the stated priority; one-line pipeline instructions are done immediately). Move each file to feedback/processed/ and commit 'fb: <name>'.
 
 STEP 2 - spec intake (main lane only): if SPEC.md (or a newer SPEC-V<n>.md) exists and PROGRESS.md has no matching 'SPEC intake' entry, perform the intake described in CLAUDE.md and commit it. The intake is this iteration's whole work: stop after that commit.
@@ -70,7 +72,7 @@ STEP 3 - completion check (main lane only, and only when $Backlog has no open it
 
 STEP 4 - if no open item in $Backlog is actionable for this lane, write IDLE.md containing one line with the reason and stop. Do not invent work.
 
-STEP 5 - otherwise execute exactly ONE backlog item end to end (lanes other than main may take two when both are small [bug]/[polish]/data-only items): implement; verify with targeted tests plus npm run test:fast - never run the full npm test inside an ordinary item; code-reviewer review; qa-playtester pass; commit '<id>: <summary>'; git push if a remote exists; update PROGRESS.md and $Backlog. If that item was the last open item of its phase, run the FULL npm test, fix regressions, and log 'P<n> complete' in PROGRESS.md. If fewer than 3 actionable items remain, apply the generation rule in CLAUDE.md first. One item, then stop.
+STEP 5 - otherwise execute exactly ONE backlog item end to end (lanes other than main may take two when both are small [bug]/[polish]/data-only items): implement; verify with targeted tests plus npm run test:fast - never run the full npm test inside an ordinary item; code-reviewer review; qa-playtester pass scoped to the item (target under 15 minutes, at most one production build); commit '<id>: <summary>'; git push if a remote exists; update PROGRESS.md and $Backlog. If that item was the last open item of its phase, run the FULL npm test, fix regressions, and log 'P<n> complete' in PROGRESS.md. If fewer than 3 actionable items remain, apply the generation rule in CLAUDE.md first. One item, then stop.
 "@
 
 Write-Log ("loop start: lane={0} model={1} backlog={2} inbox={3} cap={4:yyyy-MM-dd HH:mm} once={5}" -f $Lane, $Model, $Backlog, $Inbox, $cap, $Once.IsPresent)
