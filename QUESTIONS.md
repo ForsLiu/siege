@@ -45,3 +45,12 @@ All of the following are provisional bootstrap choices (item id `BOOT`). Every n
 ### P0-B1 — erasable TypeScript only
 
 - **P0-B1-01**: the whole codebase (`src`, `tools`, `tests`) is restricted to *erasable* TypeScript — no constructor parameter properties, enums, namespaces or `import x = require`. The sweep spawns `tools/sweep-worker.ts` as a worker thread loaded by Node's own type stripping (Node >= 22.18), which rejects non-erasable syntax, and a `--import tsx` preload is not a fix: it resolves tsx against the process CWD and does not transform the worker's graph. Enforced by `erasableSyntaxOnly` in tsconfig (`npm run check`) and by a token scan in `tests/architecture.test.ts` (the fast tier, which is the per-item gate). `package.json` engines is `>=22.18` accordingly.
+
+### P0-B2 — sweep robustness
+
+- **P0-B2-01 A dying worker costs one job**: its in-flight job is recorded as an exception (`ok: false`) and a replacement worker takes over the queue. A completeness pass afterwards records any job no worker answered for, so the report always has exactly one row per (policy, seed) — a sweep never silently under-reports.
+- **P0-B2-02 Worker messages are checked, not trusted**: a result is accepted only when it matches the outstanding job; a repeat of something that worker already answered is ignored, and anything else (wrong job, malformed message) leaves the job unanswered for the completeness pass. Before this, a duplicate answer double-counted a run and a malformed one threw out of sorting and lost every completed result.
+- **P0-B2-03 `--out` is resolved before any job runs**: a directory, a parent that is a file, a missing parent (created), a dangling symlink and an unwritable target all fail up front. Waiting until the write meant a 1000-seed sweep could be discarded by a typo.
+- **P0-B2-04 `SIEGE_SWEEP_WORKERS` is validated exactly like `--workers`** (integer, 1..64); an exported-but-empty value means "unset", matching how `vitest.config.ts` treats `SIEGE_TEST_WORKERS`. A silent fallback previously turned `-5` into a serial run that never exercised a worker at all, and `99999` into 99999 threads.
+- **P0-B2-05 Policies and seeds are de-duplicated inside `runSweep`**, not only in the CLI, so no caller can double-count a run.
+- **P0-B2-06 `meanMs` averages successful runs only**: a crashed job carries no elapsed time and would drag the reported ms/run toward zero.

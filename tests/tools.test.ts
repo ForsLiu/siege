@@ -1,9 +1,13 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { flagBool, flagInt, flagSeed, flagString, parseArgs, UsageError } from '../tools/args.ts';
 import { getPolicy, policyNames } from '../tools/policies/index.ts';
-import { runSweep } from '../tools/sweep.ts';
+import type { SweepJobResult } from '../tools/sweep-worker.ts';
+import { aggregate, DEFAULT_SWEEP_WORKERS, parsePolicies, resolveOutPath, resolveWorkers, runSweep } from '../tools/sweep.ts';
 
 describe('tools/args', () => {
   it('parses --key value, --key=value, bare flags and positionals', () => {
@@ -61,5 +65,100 @@ describe('tools/sweep worker (P0-B1)', () => {
     // Worker scheduling must not touch outcomes: everything but the wall time is identical.
     const withoutTiming = (rs: typeof results): unknown[] => rs.map(({ ms: _ms, ...rest }) => rest);
     expect(withoutTiming(results)).toEqual(withoutTiming(await runSweep([1, 2, 3, 4], ['random'], 1)));
+  }, 60_000);
+});
+
+describe('tools/sweep robustness (P0-B2)', () => {
+  /** A sweep whose workers hard-exit on the given seeds (an OOM or thread abort stand-in). */
+  const misbehavingSweep = (seeds: number[], workers: number, misbehaviour: Record<string, number[]>): Promise<SweepJobResult[]> =>
+    runSweep(seeds, ['random'], workers, {
+      workerUrl: new URL('./fixtures/crash-worker.ts', import.meta.url),
+      workerData: { role: 'sweep-double', ...misbehaviour },
+    });
+  const crashingSweep = (seeds: number[], workers: number, crashOnSeeds: number[]): Promise<SweepJobResult[]> =>
+    misbehavingSweep(seeds, workers, { crashOnSeeds });
+
+  it('validates SIEGE_SWEEP_WORKERS exactly like --workers', () => {
+    const noFlag = parseArgs([]);
+    expect(resolveWorkers(noFlag, {})).toBe(DEFAULT_SWEEP_WORKERS);
+    expect(resolveWorkers(noFlag, { SIEGE_SWEEP_WORKERS: '8' })).toBe(8);
+    for (const bad of ['0', '-5', 'abc', '99999', '2.5']) {
+      expect(() => resolveWorkers(noFlag, { SIEGE_SWEEP_WORKERS: bad }), bad).toThrow(UsageError);
+    }
+    // An exported-but-empty variable means "unset", as it does for SIEGE_TEST_WORKERS.
+    expect(resolveWorkers(noFlag, { SIEGE_SWEEP_WORKERS: '' })).toBe(DEFAULT_SWEEP_WORKERS);
+    // The flag still wins over the environment, and is validated as before.
+    expect(resolveWorkers(parseArgs(['--workers', '2']), { SIEGE_SWEEP_WORKERS: '8' })).toBe(2);
+    expect(() => resolveWorkers(parseArgs(['--workers', '65']), {})).toThrow(/<= 64/);
+  });
+
+  it('de-duplicates --policies instead of double-counting them', () => {
+    expect(parsePolicies('random,random')).toEqual(['random']);
+    expect(parsePolicies(' random , random ')).toEqual(['random']);
+    expect(() => parsePolicies('')).toThrow(UsageError);
+    expect(() => parsePolicies('nope')).toThrow(/unknown policy nope/);
+  });
+
+  it('resolves --out before any job runs: creates missing parents, rejects what cannot be written', () => {
+    const base = mkdtempSync(join(tmpdir(), 'siege-sweep-'));
+    const nested = join(base, 'deep', 'inner', 'report.json');
+    expect(resolveOutPath(parseArgs(['--out', nested]), 'stamp')).toBe(nested);
+    expect(existsSync(dirname(nested))).toBe(true);
+    // A directory, a parent that is a file, and a dangling symlink all fail here rather than
+    // after the whole sweep has been computed (QA on P0-B2).
+    expect(() => resolveOutPath(parseArgs(['--out', base]), 'stamp')).toThrow(UsageError);
+    const file = join(base, 'plain.txt');
+    writeFileSync(file, 'x', 'utf8');
+    expect(() => resolveOutPath(parseArgs(['--out', join(file, 'report.json')]), 'stamp')).toThrow(UsageError);
+    const dangling = join(base, 'dangling.json');
+    symlinkSync(join(base, 'no', 'such', 'target.json'), dangling);
+    expect(() => resolveOutPath(parseArgs(['--out', dangling]), 'stamp')).toThrow(UsageError);
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  it('a misbehaving worker cannot double-count, forge or crash the report', async () => {
+    // A duplicate answer, an answer for a job that was never dispatched, and a malformed
+    // message: each is dropped, and the job it belonged to is reported as unanswered.
+    const results = await misbehavingSweep([1, 2, 3, 4], 2, { doubleAnswerSeeds: [1], wrongSeedSeeds: [2], garbageSeeds: [3] });
+    expect(results.map((r) => r.seed)).toEqual([1, 2, 3, 4]);
+    expect(results.filter((r) => r.ok).map((r) => r.seed)).toEqual([1, 4]);
+    for (const seed of [2, 3]) expect(results.find((r) => r.seed === seed)!.error).toMatch(/no worker answered/);
+    expect(aggregate(results, ['random'])[0]!.runs).toBe(4);
+  }, 60_000);
+
+  it('runSweep de-duplicates policies and seeds for every caller, not just the CLI', async () => {
+    const results = await runSweep([1, 1, 2], ['random', 'random'], 2);
+    expect(results.map((r) => r.seed)).toEqual([1, 2]);
+  }, 60_000);
+
+  it('a crashed worker loses only its own job: the rest of the sweep still reports', async () => {
+    const results = await crashingSweep([1, 2, 3, 4], 2, [3]);
+    expect(results).toHaveLength(4);
+    const dead = results.find((r) => r.seed === 3)!;
+    expect(dead.ok).toBe(false);
+    expect(dead.error).toMatch(/worker/i);
+    for (const r of results.filter((r) => r.seed !== 3)) expect(r.ok, `seed ${r.seed}`).toBe(true);
+    // Aggregates still count the crash as an exception rather than losing the run.
+    expect(aggregate(results, ['random'])[0]!.exceptions).toBe(1);
+  }, 60_000);
+
+  it('the queue survives every worker dying at once: replacements finish the remaining jobs', async () => {
+    // Jobs are handed out in order, so with 2 workers seeds 1 and 2 go out first and kill both
+    // workers immediately. Without replacement workers, seeds 3..6 would never run at all.
+    const results = await crashingSweep([1, 2, 3, 4, 5, 6], 2, [1, 2]);
+    expect(results.map((r) => r.seed)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(results.filter((r) => !r.ok).map((r) => r.seed)).toEqual([1, 2]);
+    expect(results.filter((r) => r.ok)).toHaveLength(4);
+    expect(aggregate(results, ['random'])[0]!.exceptions).toBe(2);
+  }, 60_000);
+
+  it('the CLI rejects a bad --out before running any job', () => {
+    // 500 seeds would take many seconds; failing fast means the error arrives long before that.
+    const cli = fileURLToPath(new URL('../tools/sweep.ts', import.meta.url));
+    const t0 = Date.now();
+    const r = spawnSync(process.execPath, ['--import', 'tsx', cli, '--seeds', '500', '--out', tmpdir()], { encoding: 'utf8', timeout: 60_000 });
+    expect(r.status, r.stderr).toBe(1);
+    expect(r.stderr).toMatch(/--out is a directory/);
+    expect(Date.now() - t0).toBeLessThan(20_000);
   }, 60_000);
 });

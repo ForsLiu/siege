@@ -64,6 +64,8 @@ export function runJob(job: SweepJob): SweepJobResult {
   }
 }
 
+// Only role `sweep` installs this listener. A test double that imports `runJob` from here
+// answers the protocol itself under a different role, so it never answers twice (P0-B2).
 if (parentPort && workerData && (workerData as { role?: string }).role === 'sweep') {
   const port = parentPort;
   port.on('message', (job: SweepJob | 'exit') => {
