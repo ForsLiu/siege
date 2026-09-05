@@ -19,6 +19,13 @@ export const STAT_NAMES = [
 ] as const;
 
 export type StatName = (typeof STAT_NAMES)[number];
+
+/**
+ * Engine bound on any stat value (not a tuning number: the saturation point that keeps
+ * products of modifiers finite). Data values are capped at the same bound by the schemas,
+ * and computed stats saturate here instead of overflowing to Infinity.
+ */
+export const STAT_MAX = 1e9;
 export type StatKind = 'mul' | 'flat';
 export type ModMode = 'mul' | 'flat';
 
@@ -79,9 +86,16 @@ export function computeStat(base: number, stat: StatName, mods: readonly Modifie
     }
   }
   let v = base + flat;
-  for (const s of sums) v *= 1 + s;
+  for (const s of sums) {
+    v *= 1 + s;
+    // Saturate as we go: enough compounding sources would otherwise reach Infinity, and an
+    // overflow mid-fight must not be able to throw out of `fight()`.
+    if (v > STAT_MAX) v = STAT_MAX;
+    else if (v < -STAT_MAX) v = -STAT_MAX;
+  }
   if (INTEGER_STATS.has(stat)) v = Math.round(v);
   if (v < 0) v = 0;
+  if (v > STAT_MAX) v = STAT_MAX;
   if (!Number.isFinite(v)) throw new Error(`computeStat: ${stat} is not finite (base ${base}, ${mods.length} modifiers)`);
   return v;
 }

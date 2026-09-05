@@ -1,0 +1,23 @@
+{
+  "_provisional": "Dev fight board C (owner-half coordinates, rows 4-7). Exercises the v1 vocabulary: aura, shield, tags, projectiles.",
+  "units": [
+    {
+      "defId": "dev.warden",
+      "star": 1,
+      "col": 3,
+      "row": 5
+    },
+    {
+      "defId": "dev.brawler",
+      "star": 1,
+      "col": 2,
+      "row": 5
+    },
+    {
+      "defId": "dev.arbalest",
+      "star": 1,
+      "col": 3,
+      "row": 7
+    }
+  ]
+}

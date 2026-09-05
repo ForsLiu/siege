@@ -21,6 +21,8 @@ export interface UnitSnapshot {
   mana: number;
   maxMana: number;
   alive: boolean;
+  /** Remaining shield absorption (P0-01). */
+  shield: number;
   stunnedUntil: number;
   /** Tick of the last hit taken (for hit flashes). */
   lastHitTick: number;
@@ -75,6 +77,7 @@ function apply(units: Map<number, UnitSnapshot>, e: FightEvent, _moveTicks: numb
         mana: e.mana,
         maxMana: e.maxMana,
         alive: true,
+        shield: 0,
         stunnedUntil: 0,
         lastHitTick: -1,
         lastCastTick: -1,
@@ -105,9 +108,21 @@ function apply(units: Map<number, UnitSnapshot>, e: FightEvent, _moveTicks: numb
         t.hp = e.hpAfter;
         t.mana = e.manaAfter;
         t.lastHitTick = e.tick;
+        t.shield = Math.max(0, t.shield - e.absorbed);
       }
       return;
     }
+    case 'shield': {
+      const t = units.get(e.target);
+      if (t) t.shield = e.shieldAfter;
+      return;
+    }
+    case 'tag':
+    case 'projectile':
+    case 'projectileHit':
+    case 'projectileFizzle':
+      // No snapshot state yet: P0-02 gives projectiles their own render layer.
+      return;
     case 'heal': {
       const t = units.get(e.target);
       if (t) t.hp = e.hpAfter;
@@ -131,11 +146,20 @@ function apply(units: Map<number, UnitSnapshot>, e: FightEvent, _moveTicks: numb
       if (u) {
         u.alive = false;
         u.hp = 0;
+        u.shield = 0;
       }
       return;
     }
-    case 'statMod': {
-      // Max hp changes are reflected through subsequent hit/heal hpAfter values; nothing to do.
+    case 'statMod':
+    case 'statModEnd':
+      // Stat changes reach the snapshot through the events that carry values (maxHp, hit, heal).
+      return;
+    case 'maxHp': {
+      const u = units.get(e.uid);
+      if (u) {
+        u.maxHp = e.maxHp;
+        u.hp = e.hp;
+      }
       return;
     }
     case 'end':

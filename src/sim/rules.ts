@@ -1,4 +1,5 @@
 // Rule/content shapes the sim consumes. Values come from /data (validated by src/data).
+import type { ProjectileDef } from './effects.ts';
 import type { BoardConfig } from './hex.ts';
 import type { BoardUnit, UnitDef } from './units.ts';
 
@@ -13,6 +14,8 @@ export interface CombatRules {
   maxAttackSpeed: number;
   /** A timeout draw costs the player hp as if it were a loss. */
   drawCountsAsLoss: boolean;
+  /** Cut-off for nested hook firings (onTakeDamage -> damage -> onTakeDamage). */
+  maxHookDepth: number;
 }
 
 export interface EconomyRules {
@@ -69,6 +72,7 @@ export interface FightRules {
   combat: CombatRules;
   board: BoardConfig;
   units: Record<string, UnitDef>;
+  projectiles: Record<string, ProjectileDef>;
 }
 
 /** Everything a run needs. Built by src/data from the JSON files. */
@@ -77,6 +81,8 @@ export interface Content {
   rules: Rules;
   units: UnitDef[];
   unitsById: Record<string, UnitDef>;
+  projectiles: ProjectileDef[];
+  projectilesById: Record<string, ProjectileDef>;
   encounters: Encounter[];
   /** sha-256 of the canonical concatenation of every content file. */
   contentHash: string;
@@ -88,5 +94,6 @@ export function fightRulesFrom(content: Content): FightRules {
     combat: content.rules.combat,
     board: content.board,
     units: content.unitsById,
+    projectiles: content.projectilesById,
   };
 }

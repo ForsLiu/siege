@@ -1,5 +1,6 @@
 // Validates raw JSON with the zod schemas, cross-checks files against each other,
 // and builds the Content object with its content hash.
+import type { Effect, ProjectileDef } from '../sim/effects.ts';
 import { canonicalJson } from '../sim/hash.ts';
 import { inBounds, isPlayerCell, type BoardConfig } from '../sim/hex.ts';
 import type { Content, Encounter, Rules } from '../sim/rules.ts';
@@ -67,7 +68,7 @@ export function checkBoardUnits(file: string, units: readonly BoardUnit[], board
 export function loadContent(raw: RawContentFiles): Content {
   const board = parseOrThrow<BoardConfig>('board', BoardConfigSchema, raw.board);
   const rules = parseOrThrow<Rules>('rules', RulesSchema, raw.rules);
-  const unitsFile = parseOrThrow<{ units: UnitDef[] }>('units', UnitsFileSchema, raw.units);
+  const unitsFile = parseOrThrow<{ units: UnitDef[]; projectiles: ProjectileDef[] }>('units', UnitsFileSchema, raw.units);
   const encFile = parseOrThrow<{ encounters: Encounter[] }>('encounters', EncountersFileSchema, raw.encounters);
 
   const tierKeys = Object.keys(rules.economy.poolSize)
@@ -93,6 +94,36 @@ export function loadContent(raw: RawContentFiles): Content {
     unitsById[u.id] = u;
   }
 
+  const projectiles = [...unitsFile.projectiles].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const projectilesById: Record<string, ProjectileDef> = {};
+  for (const p of projectiles) {
+    if (projectilesById[p.id]) throw new ContentError('units', `duplicate projectile id ${p.id}`);
+    projectilesById[p.id] = p;
+  }
+  // Every spawnProjectile ref must resolve, and a projectile may not spawn itself (no loops).
+  for (const u of units) {
+    for (const ref of projectileRefs(unitEffects(u))) {
+      if (!projectilesById[ref]) throw new ContentError('units', `${u.id}: unknown projectile ref ${ref}`);
+    }
+  }
+  for (const p of projectiles) {
+    for (const ref of projectileRefs(p.effects)) {
+      if (!projectilesById[ref]) throw new ContentError('units', `projectile ${p.id}: unknown projectile ref ${ref}`);
+    }
+  }
+  // A projectile chain must terminate: reject any cycle, not just direct self-reference.
+  for (const p of projectiles) {
+    const seen = new Set<string>([p.id]);
+    const stack = projectileRefs(p.effects);
+    while (stack.length > 0) {
+      const ref = stack.pop() as string;
+      if (ref === p.id) throw new ContentError('units', `projectile ${p.id} is part of a spawn cycle`);
+      if (seen.has(ref)) continue;
+      seen.add(ref);
+      stack.push(...projectileRefs((projectilesById[ref] as ProjectileDef).effects));
+    }
+  }
+
   const encounters = [...encFile.encounters].sort((a, b) => a.round - b.round);
   encounters.forEach((e, i) => {
     if (e.round !== i + 1) throw new ContentError('encounters', `rounds must be 1..n without gaps (found ${e.round} at index ${i})`);
@@ -100,7 +131,22 @@ export function loadContent(raw: RawContentFiles): Content {
   });
 
   const contentHash = computeContentHash({ board: raw.board, rules: raw.rules, units: raw.units, encounters: raw.encounters });
-  return { board, rules, units, unitsById, encounters, contentHash };
+  return { board, rules, units, unitsById, projectiles, projectilesById, encounters, contentHash };
+}
+
+/** Every effect a unit can run: its ability, all its hooks and its aura. */
+function unitEffects(u: UnitDef): Effect[] {
+  const out: Effect[] = [...(u.ability?.effects ?? [])];
+  for (const key of Object.keys(u.hooks).sort()) {
+    const list = (u.hooks as Record<string, Effect[] | undefined>)[key];
+    if (list) out.push(...list);
+  }
+  if (u.aura) out.push(...u.aura.effects);
+  return out;
+}
+
+function projectileRefs(effects: readonly Effect[]): string[] {
+  return effects.filter((e): e is Extract<Effect, { type: 'spawnProjectile' }> => e.type === 'spawnProjectile').map((e) => e.ref);
 }
 
 export function loadBoardFile(file: string, raw: unknown, content: Content): BoardUnit[] {

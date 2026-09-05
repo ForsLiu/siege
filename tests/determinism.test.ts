@@ -60,6 +60,11 @@ describe('determinism', () => {
     const r2 = fight(devBoard('a'), devBoard('b'), 7, rules);
     expect(r2.hash).toBe(r1.hash);
     expect(hashValue(r2)).toBe(before);
+    // Max-hp modifiers reach the snapshot through `maxHp` events: no frame may show a unit
+    // above its own maximum (dev.guardian's onCombatStart +10% hp used to overflow the bar).
+    for (const frame of tl.frames) {
+      for (const u of frame) expect(u.hp, `${u.defId} hp ${u.hp} > maxHp ${u.maxHp}`).toBeLessThanOrEqual(u.maxHp + 1e-9);
+    }
     // The final frame reflects the outcome.
     const last = tl.frames[tl.frames.length - 1]!;
     const leftAlive = last.filter((u) => u.team === 0 && u.alive).length;
