@@ -1,0 +1,8 @@
+{
+  "_provisional": "Dev fight board B (owner-half coordinates, rows 4-7).",
+  "units": [
+    { "defId": "dev.assassin", "star": 1, "col": 3, "row": 4 },
+    { "defId": "dev.mage", "star": 1, "col": 2, "row": 6 },
+    { "defId": "dev.healer", "star": 1, "col": 4, "row": 6 }
+  ]
+}

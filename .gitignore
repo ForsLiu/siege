@@ -4,6 +4,7 @@ dist/
 bench/
 telemetry/
 *.log
+*.tsbuildinfo
 STOP.md
 IDLE.md
 .claude/settings.local.json

@@ -1,0 +1,27 @@
+// Which /data files make up the active content set. Provisional: the dev sample set.
+// SPEC intake replaces the dev paths with the real content files.
+import type { DataFileKind } from './schemas.ts';
+
+export interface ContentManifestEntry {
+  kind: Exclude<DataFileKind, 'boardFile'>;
+  /** Path relative to /data. */
+  path: string;
+}
+
+export const CONTENT_MANIFEST: readonly ContentManifestEntry[] = [
+  { kind: 'board', path: 'board.json' },
+  { kind: 'rules', path: 'dev/rules.json' },
+  { kind: 'units', path: 'dev/units.json' },
+  { kind: 'encounters', path: 'dev/encounters.json' },
+];
+
+/** Dev boards selectable on the Title screen's "Dev fight" entry. */
+export const DEV_BOARD_PATHS: readonly string[] = ['dev/boards/a.json', 'dev/boards/b.json', 'dev/boards/mirror.json'];
+
+/** Resolve the schema kind for a /data-relative path, or null if the path is not writable content. */
+export function kindForPath(path: string): DataFileKind | null {
+  const entry = CONTENT_MANIFEST.find((e) => e.path === path);
+  if (entry) return entry.kind;
+  if (/^dev\/boards\/[a-z0-9_-]+\.json$/.test(path)) return 'boardFile';
+  return null;
+}

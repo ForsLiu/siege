@@ -1,0 +1,23 @@
+{
+  "_provisional": "Dev fight board A (owner-half coordinates, rows 4-7).",
+  "units": [
+    {
+      "defId": "dev.brawler",
+      "star": 1,
+      "col": 2,
+      "row": 4
+    },
+    {
+      "defId": "dev.guardian",
+      "star": 1,
+      "col": 4,
+      "row": 4
+    },
+    {
+      "defId": "dev.archer",
+      "star": 1,
+      "col": 3,
+      "row": 6
+    }
+  ]
+}

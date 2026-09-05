@@ -1,0 +1,32 @@
+{
+  "name": "siege",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Siege - 2D single-player PvE roguelike autobattler (engine + tooling)",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit && vitest run tests/architecture.test.ts",
+    "test": "vitest run",
+    "test:fast": "vitest run --exclude \"tests/slow/**\"",
+    "fight": "tsx tools/fight.ts",
+    "sim": "tsx tools/sim.ts",
+    "sweep": "tsx tools/sweep.ts",
+    "bench": "tsx tools/bench.ts"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "vite": "8.2.2",
+    "vitest": "5.0.0"
+  },
+  "dependencies": {
+    "zod": "4.5.4"
+  }
+}

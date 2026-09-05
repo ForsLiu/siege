@@ -1,0 +1,51 @@
+{
+  "_provisional": "Engine sample numbers. Every value is a placeholder until SPEC.md defines it (see QUESTIONS.md).",
+  "version": 1,
+  "tickRate": 30,
+  "combat": {
+    "maxSeconds": 30,
+    "moveSecondsPerHex": 0.5,
+    "manaOnAttack": 10,
+    "manaOnHitTaken": 5,
+    "mitigationConstant": 100,
+    "minAttackSpeed": 0.2,
+    "maxAttackSpeed": 5,
+    "drawCountsAsLoss": true
+  },
+  "economy": {
+    "startGold": 10,
+    "startHp": 100,
+    "startLevel": 1,
+    "startXp": 0,
+    "shopSlots": 5,
+    "benchSlots": 9,
+    "rerollCost": 2,
+    "xpCost": 4,
+    "xpPerBuy": 4,
+    "xpPerRound": 2,
+    "maxLevel": 9,
+    "xpToLevel": [0, 2, 6, 10, 20, 36, 56, 80, 100],
+    "baseIncome": 5,
+    "winBonus": 1,
+    "interest": { "per": 10, "max": 5 },
+    "sellRefund": 1,
+    "maxStar": 3,
+    "mergeCopies": 3,
+    "poolSize": { "1": 29, "2": 22, "3": 18, "4": 12, "5": 10 },
+    "shopOdds": {
+      "1": [100, 0, 0, 0, 0],
+      "2": [100, 0, 0, 0, 0],
+      "3": [75, 25, 0, 0, 0],
+      "4": [55, 30, 15, 0, 0],
+      "5": [45, 33, 20, 2, 0],
+      "6": [25, 40, 30, 5, 0],
+      "7": [19, 30, 35, 15, 1],
+      "8": [16, 20, 35, 25, 4],
+      "9": [9, 15, 30, 30, 16]
+    }
+  },
+  "hpLoss": {
+    "byRound": [3, 4, 5, 6, 8, 10, 12, 14, 16, 20],
+    "perSurvivingUnit": 1
+  }
+}

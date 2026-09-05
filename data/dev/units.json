@@ -1,0 +1,105 @@
+{
+  "_provisional": "Engine sample units. Placeholder content for engine tests only; not game design.",
+  "units": [
+    {
+      "id": "dev.brawler", "name": "Dev Brawler", "cost": 1, "attackType": "melee", "tags": ["dev"],
+      "stats": [
+        { "hp": 500, "attack": 50, "attackSpeed": 0.7, "armor": 30, "magicResist": 30, "range": 1, "maxMana": 60, "startMana": 0, "abilityPower": 100 },
+        { "hp": 900, "attack": 90, "attackSpeed": 0.7, "armor": 30, "magicResist": 30, "range": 1, "maxMana": 60, "startMana": 0, "abilityPower": 100 },
+        { "hp": 1620, "attack": 162, "attackSpeed": 0.7, "armor": 30, "magicResist": 30, "range": 1, "maxMana": 60, "startMana": 0, "abilityPower": 100 }
+      ],
+      "ability": { "name": "Dev Slam", "effects": [
+        { "type": "damage", "kind": "physical", "amount": 100, "scaling": { "stat": "attack", "factor": 1.5 }, "target": "target" },
+        { "type": "stun", "duration": 1, "target": "target" }
+      ] },
+      "hooks": {}
+    },
+    {
+      "id": "dev.archer", "name": "Dev Archer", "cost": 1, "attackType": "ranged", "tags": ["dev"],
+      "stats": [
+        { "hp": 400, "attack": 45, "attackSpeed": 0.75, "armor": 15, "magicResist": 15, "range": 4, "maxMana": 50, "startMana": 0, "abilityPower": 100 },
+        { "hp": 720, "attack": 81, "attackSpeed": 0.75, "armor": 15, "magicResist": 15, "range": 4, "maxMana": 50, "startMana": 0, "abilityPower": 100 },
+        { "hp": 1296, "attack": 146, "attackSpeed": 0.75, "armor": 15, "magicResist": 15, "range": 4, "maxMana": 50, "startMana": 0, "abilityPower": 100 }
+      ],
+      "ability": { "name": "Dev Volley", "effects": [
+        { "type": "damage", "kind": "physical", "amount": 60, "scaling": { "stat": "attack", "factor": 2 }, "target": "target" }
+      ] },
+      "hooks": {}
+    },
+    {
+      "id": "dev.mage", "name": "Dev Mage", "cost": 2, "attackType": "ranged", "tags": ["dev"],
+      "stats": [
+        { "hp": 450, "attack": 40, "attackSpeed": 0.65, "armor": 15, "magicResist": 20, "range": 3, "maxMana": 70, "startMana": 20, "abilityPower": 100 },
+        { "hp": 810, "attack": 72, "attackSpeed": 0.65, "armor": 15, "magicResist": 20, "range": 3, "maxMana": 70, "startMana": 20, "abilityPower": 100 },
+        { "hp": 1458, "attack": 130, "attackSpeed": 0.65, "armor": 15, "magicResist": 20, "range": 3, "maxMana": 70, "startMana": 20, "abilityPower": 100 }
+      ],
+      "ability": { "name": "Dev Blast", "effects": [
+        { "type": "damage", "kind": "magic", "amount": 200, "scaling": { "stat": "abilityPower", "factor": 1 }, "target": "enemies" }
+      ] },
+      "hooks": {}
+    },
+    {
+      "id": "dev.guardian", "name": "Dev Guardian", "cost": 2, "attackType": "melee", "tags": ["dev"],
+      "stats": [
+        { "hp": 750, "attack": 45, "attackSpeed": 0.6, "armor": 45, "magicResist": 45, "range": 1, "maxMana": 80, "startMana": 30, "abilityPower": 100 },
+        { "hp": 1350, "attack": 81, "attackSpeed": 0.6, "armor": 45, "magicResist": 45, "range": 1, "maxMana": 80, "startMana": 30, "abilityPower": 100 },
+        { "hp": 2430, "attack": 146, "attackSpeed": 0.6, "armor": 45, "magicResist": 45, "range": 1, "maxMana": 80, "startMana": 30, "abilityPower": 100 }
+      ],
+      "ability": { "name": "Dev Bulwark", "effects": [
+        { "type": "statMod", "stat": "armor", "mode": "flat", "value": 40, "duration": 4, "target": "allies" },
+        { "type": "heal", "amount": 150, "scaling": { "stat": "hp", "factor": 0.1 }, "target": "self" }
+      ] },
+      "hooks": { "onCombatStart": [ { "type": "statMod", "stat": "hp", "mode": "mul", "value": 0.1, "duration": null, "target": "self" } ] }
+    },
+    {
+      "id": "dev.healer", "name": "Dev Healer", "cost": 3, "attackType": "ranged", "tags": ["dev"],
+      "stats": [
+        { "hp": 550, "attack": 35, "attackSpeed": 0.7, "armor": 20, "magicResist": 30, "range": 3, "maxMana": 60, "startMana": 10, "abilityPower": 100 },
+        { "hp": 990, "attack": 63, "attackSpeed": 0.7, "armor": 20, "magicResist": 30, "range": 3, "maxMana": 60, "startMana": 10, "abilityPower": 100 },
+        { "hp": 1782, "attack": 113, "attackSpeed": 0.7, "armor": 20, "magicResist": 30, "range": 3, "maxMana": 60, "startMana": 10, "abilityPower": 100 }
+      ],
+      "ability": { "name": "Dev Mend", "effects": [
+        { "type": "heal", "amount": 250, "scaling": { "stat": "abilityPower", "factor": 1 }, "target": "allies" }
+      ] },
+      "hooks": {}
+    },
+    {
+      "id": "dev.assassin", "name": "Dev Assassin", "cost": 3, "attackType": "melee", "tags": ["dev"],
+      "stats": [
+        { "hp": 600, "attack": 70, "attackSpeed": 0.9, "armor": 20, "magicResist": 20, "range": 1, "maxMana": 40, "startMana": 0, "abilityPower": 100 },
+        { "hp": 1080, "attack": 126, "attackSpeed": 0.9, "armor": 20, "magicResist": 20, "range": 1, "maxMana": 40, "startMana": 0, "abilityPower": 100 },
+        { "hp": 1944, "attack": 227, "attackSpeed": 0.9, "armor": 20, "magicResist": 20, "range": 1, "maxMana": 40, "startMana": 0, "abilityPower": 100 }
+      ],
+      "ability": { "name": "Dev Shiv", "effects": [
+        { "type": "damage", "kind": "true", "amount": 120, "scaling": { "stat": "attack", "factor": 1 }, "target": "target" },
+        { "type": "statMod", "stat": "attackSpeed", "mode": "mul", "value": 0.3, "duration": 3, "target": "self" }
+      ] },
+      "hooks": { "onKill": [ { "type": "heal", "amount": 100, "target": "self" } ] }
+    },
+    {
+      "id": "dev.knight", "name": "Dev Knight", "cost": 4, "attackType": "melee", "tags": ["dev"],
+      "stats": [
+        { "hp": 950, "attack": 80, "attackSpeed": 0.75, "armor": 50, "magicResist": 40, "range": 1, "maxMana": 90, "startMana": 40, "abilityPower": 100 },
+        { "hp": 1710, "attack": 144, "attackSpeed": 0.75, "armor": 50, "magicResist": 40, "range": 1, "maxMana": 90, "startMana": 40, "abilityPower": 100 },
+        { "hp": 3078, "attack": 259, "attackSpeed": 0.75, "armor": 50, "magicResist": 40, "range": 1, "maxMana": 90, "startMana": 40, "abilityPower": 100 }
+      ],
+      "ability": { "name": "Dev Cleave", "effects": [
+        { "type": "damage", "kind": "physical", "amount": 150, "scaling": { "stat": "attack", "factor": 2 }, "target": "enemies" }
+      ] },
+      "hooks": { "onHit": [ { "type": "heal", "amount": 10, "target": "self" } ] }
+    },
+    {
+      "id": "dev.titan", "name": "Dev Titan", "cost": 5, "attackType": "melee", "tags": ["dev"],
+      "stats": [
+        { "hp": 1400, "attack": 110, "attackSpeed": 0.8, "armor": 60, "magicResist": 60, "range": 1, "maxMana": 100, "startMana": 50, "abilityPower": 100 },
+        { "hp": 2520, "attack": 198, "attackSpeed": 0.8, "armor": 60, "magicResist": 60, "range": 1, "maxMana": 100, "startMana": 50, "abilityPower": 100 },
+        { "hp": 4536, "attack": 356, "attackSpeed": 0.8, "armor": 60, "magicResist": 60, "range": 1, "maxMana": 100, "startMana": 50, "abilityPower": 100 }
+      ],
+      "ability": { "name": "Dev Quake", "effects": [
+        { "type": "damage", "kind": "magic", "amount": 300, "scaling": { "stat": "abilityPower", "factor": 2 }, "target": "enemies" },
+        { "type": "stun", "duration": 1.5, "target": "enemies" }
+      ] },
+      "hooks": { "onDeath": [ { "type": "damage", "kind": "true", "amount": 200, "target": "enemies" } ] }
+    }
+  ]
+}

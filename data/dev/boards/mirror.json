@@ -1,0 +1,7 @@
+{
+  "_provisional": "Symmetric board used by the mirrored-fight draw test.",
+  "units": [
+    { "defId": "dev.guardian", "star": 1, "col": 3, "row": 4 },
+    { "defId": "dev.healer", "star": 1, "col": 3, "row": 6 }
+  ]
+}
