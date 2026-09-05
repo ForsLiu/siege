@@ -54,3 +54,11 @@ All of the following are provisional bootstrap choices (item id `BOOT`). Every n
 - **P0-B2-04 `SIEGE_SWEEP_WORKERS` is validated exactly like `--workers`** (integer, 1..64); an exported-but-empty value means "unset", matching how `vitest.config.ts` treats `SIEGE_TEST_WORKERS`. A silent fallback previously turned `-5` into a serial run that never exercised a worker at all, and `99999` into 99999 threads.
 - **P0-B2-05 Policies and seeds are de-duplicated inside `runSweep`**, not only in the CLI, so no caller can double-count a run.
 - **P0-B2-06 `meanMs` averages successful runs only**: a crashed job carries no elapsed time and would drag the reported ms/run toward zero.
+
+### P0-B3 — sweep worker liveness
+
+- **P0-B3-01 Watchdog**: a job unanswered for `--job-timeout` (default 120 s, capped at 2147483647 ms because `setTimeout` saturates above that) terminates its worker, records the job as a timeout and spawns a replacement. The timer is armed when the worker reports `online`, so thread start-up is not charged to the first job. Liveness is a worker-mode guarantee only: `--workers 1` runs jobs in this process, where nothing can interrupt a wedged run.
+- **P0-B3-02 No cap on timeouts**: a cap on how many jobs may time out was tried and removed. It abandoned the healthy jobs queued behind the wedged ones and made the report depend on `--workers` (with 6 wedged jobs, 2 workers reported 24 healthy runs as failures while 4 workers reported none). Correctness wins over the pathological worst case; `--job-timeout` is the control on a host where jobs legitimately run long.
+- **P0-B3-03 Timeouts are reported apart from run exceptions**: `PolicyAggregate.timeouts` (the `t/o` column) counts the subset of exceptions that were harness timeouts, so a slow host cannot silently look like a buggy sim.
+- **P0-B3-04 Drained workers do not hold up the report**: after the queue drains, a worker gets `exitGraceMs` (5 s) to leave and is then terminated. Its non-zero exit is expected at that point, not a crash.
+- **P0-B3-05 Every string flag needs a value**: `flagString` rejects both a bare `--flag` and an explicitly empty `--flag=`, matching `flagInt`. Silently falling back to a default hid `--out` typos in `sim` and `sweep`.

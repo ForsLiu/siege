@@ -14,8 +14,9 @@ runTool(() => {
 
   const { report } = runWithPolicy(seed, policy, content, { now: () => performance.now(), checkInvariants: flagBool(args, 'check') });
 
-  const out = args.flags['out'];
-  if (typeof out === 'string') writeFileSync(out, JSON.stringify(report, null, 2) + '\n', 'utf8');
+  // Through flagString, so a bare `--out` is a usage error rather than a silently skipped write.
+  const out = flagString(args, 'out', '');
+  if (out !== '') writeFileSync(out, JSON.stringify(report, null, 2) + '\n', 'utf8');
 
   if (flagBool(args, 'json')) {
     console.log(JSON.stringify(report, null, 2));

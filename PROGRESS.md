@@ -4,11 +4,11 @@
 Bootstrap complete (2026-09-05). Cloud mode adopted (feedback/cloud-mode.md; see CLAUDE.md "Cloud task contract"). P0-01 (effect vocabulary v1) and P0-B1 (sweep workers) are done: shields, tags, auras, projectiles, the ordered damage pipeline and the extended per-unit ledger are in, with `data/dev/` content that exercises every effect and trigger. No SPEC.md yet: all content in `data/dev/` is provisional (see QUESTIONS.md BOOT-01…15 and P0-01-01…13).
 
 ## Next action
-Run the loop on BACKLOG.md P0, top-down: P0-B3 (sweep worker liveness, filed by QA on P0-B2), then P0-02 (attack types & projectiles).
+Run the loop on BACKLOG.md P0, top-down: P0-02 (attack types & projectiles).
 
 ## Pipeline checks
 - `npm run check` — green (tsc + architecture test).
-- `npm run test:fast` — green, 198 tests + 1 documented skip in 12 files; measured wall time **~5 s** (limit 5 min).
+- `npm run test:fast` — green, 203 tests + 1 documented skip in 12 files; measured wall time **~15 s** (limit 5 min). The sweep-liveness tests wait on real watchdog timers (~9 s of it); P0-14 revisits the budget.
 - `npm test` (full, includes `tests/slow/build.test.ts`, two production builds) — last run at bootstrap; the next full run is due at P0 phase completion.
 - Review: code-reviewer (REQUEST-CHANGES → all findings fixed except BOOT-16, logged) and qa-playtester (PASS on all acceptance criteria; 7 filed bugs fixed, bug 2's regression test deferred to P0-09).
 - `npm run fight -- --seed 1 --left data/dev/boards/a.json --right data/dev/boards/b.json` — prints winner, ticks, survivors, ledger, hash.
@@ -32,6 +32,7 @@ See README.md: `dev`, `build`, `preview`, `check`, `test`, `test:fast`, `fight`,
 - 2026-09-04 infrastructure committed
 - 2026-09-05 bootstrap: engine skeleton + tooling (BOOTSTRAP.md §1–§9)
 - 2026-09-05 fb: cloud mode — CLAUDE.md "Cloud task contract", lanes rewritten for cloud tasks, OPS.md "Cloud mode"
+- 2026-09-05 P0-B3 sweep worker liveness — per-job watchdog, exit grace, strict string flags; a timeout cap was tried and removed (it abandoned healthy jobs and made the report depend on --workers)
 - 2026-09-05 P0-B2 sweep robustness — crashed workers, --out validation, SIEGE_SWEEP_WORKERS, duplicate policies; QA's residual findings (worker liveness, bare flags) -> BACKLOG P0-B3
 - 2026-09-05 P0-B1 QA filed sweep-robustness findings (crashed worker discards results, `--out` into a missing dir, `SIEGE_SWEEP_WORKERS` unvalidated, duplicate policies) -> BACKLOG P0-B2
 - 2026-09-05 P0-B1 sweep workers — the worker graph is loaded by Node's type stripping, so parameter properties broke it; codebase restricted to erasable TypeScript (`erasableSyntaxOnly` + a fast-tier token scan)

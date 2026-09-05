@@ -1,4 +1,5 @@
-// npx tsx tools/sweep.ts --seeds 50 --policies random [--workers 4] [--start 1] [--out bench/sweep-<stamp>.json]
+// npx tsx tools/sweep.ts --seeds 50 --policies random [--workers 4] [--start 1]
+//   [--job-timeout 120000] [--out bench/sweep-<stamp>.json]
 // Runs seeds x policies in worker threads (cap SIEGE_SWEEP_WORKERS, default 4), prints a table,
 // writes bench/sweep-<stamp>.json (gitignored).
 import { accessSync, closeSync, constants, mkdirSync, openSync, statSync, writeFileSync } from 'node:fs';
@@ -76,6 +77,8 @@ export interface PolicyAggregate {
   policy: string;
   runs: number;
   exceptions: number;
+  /** Subset of `exceptions` that were harness timeouts rather than a run throwing. */
+  timeouts: number;
   winRate: number;
   meanRoundsSurvived: number;
   meanFightTicks: number;
@@ -113,6 +116,7 @@ export function aggregate(results: SweepJobResult[], policies: string[]): Policy
       policy,
       runs: rs.length,
       exceptions: rs.length - ok.length,
+      timeouts: rs.filter((r) => !r.ok && (r.error ?? '').startsWith(TIMEOUT_ERROR_PREFIX)).length,
       winRate: ok.length ? ok.filter((r) => r.outcome === 'win').length / ok.length : 0,
       meanRoundsSurvived: mean(ok.map((r) => r.roundsSurvived)),
       meanFightTicks: mean(ticks),
@@ -131,7 +135,22 @@ export interface SweepOptions {
   workerUrl?: URL;
   /** Extra workerData merged into `{ role: 'sweep' }`. */
   workerData?: Record<string, unknown>;
+  /** Watchdog: a job unanswered for this long is abandoned and its worker replaced. */
+  jobTimeoutMs?: number;
+  /** How long a drained worker gets to exit on its own before it is terminated. */
+  exitGraceMs?: number;
 }
+
+/**
+ * Watchdog default. A run of the longest dev seed takes tens of milliseconds, so two minutes is
+ * pure slack: it exists to end a wedged worker, not to bound normal work.
+ */
+export const DEFAULT_JOB_TIMEOUT_MS = 120_000;
+/** setTimeout saturates above this, firing immediately instead of waiting. */
+export const MAX_JOB_TIMEOUT_MS = 2_147_483_647;
+export const DEFAULT_EXIT_GRACE_MS = 5_000;
+/** Marks a harness timeout, so a report can tell it apart from a run that actually threw. */
+export const TIMEOUT_ERROR_PREFIX = 'worker timed out';
 
 /** Identity of a job, for de-duplication. */
 function jobKey(j: { seed: number; policy: string }): string {
@@ -171,6 +190,8 @@ export async function runSweep(seeds: number[], policies: string[], workers: num
   const uniqueSeeds = [...new Set(seeds)];
   for (const policy of uniquePolicies) for (const seed of uniqueSeeds) jobs.push({ seed, policy });
   // Results are sorted the same way on both paths, so a report never depends on --workers.
+  // The serial path runs jobs in this process, so the liveness guarantees below (watchdog,
+  // exit grace) are worker-mode only: a wedged run here hangs the sweep, as any tool would.
   if (workers <= 1 || jobs.length <= 1) return sortResults(jobs.map(runJob));
 
   const results: SweepJobResult[] = [];
@@ -179,6 +200,12 @@ export async function runSweep(seeds: number[], policies: string[], workers: num
   // a replacement takes over the queue. Each death consumes one job, so the loop still ends.
   let deaths = 0;
   const workerUrl = opts.workerUrl ?? new URL('./sweep-worker.ts', import.meta.url);
+  const jobTimeoutMs = opts.jobTimeoutMs ?? DEFAULT_JOB_TIMEOUT_MS;
+  const exitGraceMs = opts.exitGraceMs ?? DEFAULT_EXIT_GRACE_MS;
+  // There is deliberately no cap on how many jobs may time out. A cap abandons the healthy
+  // jobs queued behind the wedged ones and makes the report depend on --workers, which is worse
+  // than the cost it saves; `--job-timeout` is the control for a host where jobs legitimately
+  // run long (QUESTIONS.md P0-B3-02).
   const spawn = (): Promise<void> =>
     new Promise((resolveSpawn) => {
       // No execArgv: the worker's module graph is loaded by Node's own type stripping, so it
@@ -187,23 +214,58 @@ export async function runSweep(seeds: number[], policies: string[], workers: num
       const w = new Worker(workerUrl, { workerData: { role: 'sweep', ...opts.workerData } });
       let current: SweepJob | null = null;
       let settled = false;
+      let draining = false;
+      let online = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const clearTimer = (): void => {
+        if (timer !== null) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      };
       const feed = (): void => {
+        clearTimer();
         if (next >= jobs.length) {
+          // Drained. The worker is asked to leave, but a worker that will not exit must not
+          // hold up a sweep whose results are already in hand: it is terminated after a grace
+          // period, and either way this spawn is done.
           current = null;
+          draining = true;
           w.postMessage('exit');
+          timer = setTimeout(() => {
+            void w.terminate();
+            finish();
+          }, exitGraceMs);
+          timer.unref?.();
           return;
         }
         current = jobs[next++] as SweepJob;
         w.postMessage(current);
+        // Watchdog: a worker that neither answers nor exits would otherwise hang the sweep.
+        // Armed only once the thread is up, so booting it is not charged to the first job.
+        if (online) armWatchdog();
       };
+      const armWatchdog = (): void => {
+        timer = setTimeout(() => {
+          void w.terminate();
+          died(`${TIMEOUT_ERROR_PREFIX} after ${jobTimeoutMs} ms`);
+        }, jobTimeoutMs);
+        timer.unref?.();
+      };
+      w.on('online', () => {
+        online = true;
+        if (!settled && current !== null && timer === null) armWatchdog();
+      });
       const finish = (): void => {
         if (settled) return;
         settled = true;
+        clearTimer();
         resolveSpawn();
       };
       const died = (reason: string): void => {
         if (settled) return;
         settled = true;
+        clearTimer();
         if (current !== null) {
           results.push(crashedResult(current, reason));
           current = null;
@@ -213,7 +275,8 @@ export async function runSweep(seeds: number[], policies: string[], workers: num
         // Each spawn takes a job before it can die, so `deaths` cannot outrun `jobs.length`;
         // the bound is belt-and-braces. A replacement that cannot even start is swallowed --
         // the completeness pass below records whatever it leaves unanswered.
-        resolveSpawn(next < jobs.length && deaths <= jobs.length ? spawn().catch(() => undefined) : undefined);
+        const replace = next < jobs.length && deaths <= jobs.length;
+        resolveSpawn(replace ? spawn().catch(() => undefined) : undefined);
       };
       // Worker messages are checked, not trusted: an unchecked duplicate double-counts a run,
       // and an unchecked malformed message used to throw out of sorting and lose every
@@ -238,7 +301,9 @@ export async function runSweep(seeds: number[], policies: string[], workers: num
         died(`worker error: ${e.message}`);
       });
       w.on('exit', (code) => {
-        if (code === 0 && current === null) finish();
+        // After the drain handshake any exit code is expected: the worker may have been
+        // terminated by the grace timer above.
+        if (draining || (code === 0 && current === null)) finish();
         else died(`worker exited with ${code}`);
       });
       feed();
@@ -259,10 +324,10 @@ function sortResults(results: SweepJobResult[]): SweepJobResult[] {
 }
 
 export function formatTable(aggs: PolicyAggregate[]): string {
-  const header = 'policy     runs  exc  win%   rounds  ticks(mean)  ticks(p95)  hp     lvl   cmds   ms/run';
+  const header = 'policy     runs  exc  t/o  win%   rounds  ticks(mean)  ticks(p95)  hp     lvl   cmds   ms/run';
   const rows = aggs.map(
     (a) =>
-      `${a.policy.padEnd(10)} ${String(a.runs).padStart(4)}  ${String(a.exceptions).padStart(3)}  ${(a.winRate * 100).toFixed(0).padStart(4)}  ${a.meanRoundsSurvived.toFixed(2).padStart(7)}  ${a.meanFightTicks.toFixed(0).padStart(11)}  ${String(a.p95FightTicks).padStart(10)}  ${a.meanFinalHp.toFixed(1).padStart(5)}  ${a.meanFinalLevel.toFixed(1).padStart(4)}  ${a.meanCommands.toFixed(0).padStart(5)}  ${a.meanMs.toFixed(0).padStart(6)}`,
+      `${a.policy.padEnd(10)} ${String(a.runs).padStart(4)}  ${String(a.exceptions).padStart(3)}  ${String(a.timeouts).padStart(3)}  ${(a.winRate * 100).toFixed(0).padStart(4)}  ${a.meanRoundsSurvived.toFixed(2).padStart(7)}  ${a.meanFightTicks.toFixed(0).padStart(11)}  ${String(a.p95FightTicks).padStart(10)}  ${a.meanFinalHp.toFixed(1).padStart(5)}  ${a.meanFinalLevel.toFixed(1).padStart(4)}  ${a.meanCommands.toFixed(0).padStart(5)}  ${a.meanMs.toFixed(0).padStart(6)}`,
   );
   return [header, ...rows].join('\n');
 }
@@ -274,6 +339,7 @@ async function main(): Promise<void> {
   if (start + nSeeds - 1 > SEED_MAX) throw new UsageError(`--start + --seeds exceeds the seed range (max ${SEED_MAX})`);
   const policies = parsePolicies(flagString(args, 'policies', 'random'));
   const workers = resolveWorkers(args, process.env);
+  const jobTimeoutMs = flagInt(args, 'job-timeout', DEFAULT_JOB_TIMEOUT_MS, { min: 1000, max: MAX_JOB_TIMEOUT_MS });
   const seeds = Array.from({ length: nSeeds }, (_, i) => start + i);
   const content = loadContentFromDisk();
   // Resolved before any job runs, so a bad --out costs nothing.
@@ -281,7 +347,7 @@ async function main(): Promise<void> {
   const outPath = resolveOutPath(args, stamp);
 
   const t0 = performance.now();
-  const results = await runSweep(seeds, policies, workers);
+  const results = await runSweep(seeds, policies, workers, { jobTimeoutMs });
   const totalMs = performance.now() - t0;
   const aggregates = aggregate(results, policies);
   const report: SweepReport = { stamp, contentHash: content.contentHash, seeds, policies, workers, totalMs, aggregates, results };

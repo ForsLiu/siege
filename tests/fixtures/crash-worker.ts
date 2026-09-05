@@ -17,6 +17,10 @@ interface DoubleData {
   wrongSeedSeeds?: number[];
   /** Post something that is not a result at all. */
   garbageSeeds?: number[];
+  /** Never answer and never exit: the parent's watchdog is the only way out. */
+  silentSeeds?: number[];
+  /** Answer every job, but never exit after the parent asks it to. */
+  linger?: boolean;
 }
 
 const data = workerData as DoubleData;
@@ -27,9 +31,12 @@ if (parentPort && data && data.role === 'sweep-double') {
   port.on('message', (job: SweepJob | 'exit') => {
     if (job === 'exit') {
       port.close();
+      // A worker that refuses to go away after the queue is drained.
+      if (data.linger === true) setInterval(() => {}, 1000);
       return;
     }
     if (has(data.crashOnSeeds, job.seed)) process.exit(3);
+    if (has(data.silentSeeds, job.seed)) return;
     if (has(data.garbageSeeds, job.seed)) {
       port.postMessage('not-a-result');
       return;

@@ -36,9 +36,12 @@ export function parseArgs(argv: readonly string[]): Args {
   return { flags, positional };
 }
 
+/** Strict string flag: a bare `--flag` with no value is a usage error, as it is for flagInt. */
 export function flagString(args: Args, name: string, fallback: string): string {
   const v = args.flags[name];
-  return typeof v === 'string' ? v : fallback;
+  if (v === undefined) return fallback;
+  if (v === true || v === '') throw new UsageError(`--${name} needs a value`);
+  return v;
 }
 
 /** Strict integer flag: "1.5", "abc" and a bare --flag are usage errors. */

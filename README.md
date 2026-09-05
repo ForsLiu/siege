@@ -23,7 +23,7 @@ Stack: TypeScript (strict) · Vite · HTML canvas 2D · Vitest · zod · Node 22
 | `npx tsx tools/sweep.ts --seeds 50 --policies random [--start 1] [--workers 4]` | seeds × policies in worker threads; aggregate table (win rate, mean rounds survived, fight length mean/p95, exceptions); writes `bench/sweep-<stamp>.json` (gitignored) |
 | `npm run bench [-- --seconds 3]` | fights/sec and ticks/sec on a fixed dev matchup plus a host-independent budget (sim ticks per baseline hash) |
 
-Environment: `SIEGE_TEST_WORKERS` (vitest workers, default 4), `SIEGE_SWEEP_WORKERS` (sweep worker threads, default 4; must be 1..64 — anything else is a usage error, an empty value means unset). A sweep worker that dies takes only its own job down: that run is reported as an exception and a replacement finishes the queue.
+Environment: `SIEGE_TEST_WORKERS` (vitest workers, default 4), `SIEGE_SWEEP_WORKERS` (sweep worker threads, default 4; must be 1..64 — anything else is a usage error, an empty value means unset). With two or more workers, a sweep worker that dies, wedges (no answer within `--job-timeout`, default 120 s) or refuses to exit takes only its own job down: that run is reported as an exception (counted in the `t/o` column when it was a timeout) and a replacement finishes the queue. `--workers 1` runs jobs in-process, where no watchdog applies. Every string flag needs a value: a bare `--out` or `--policy` is a usage error, not a silent default.
 
 ## Playing (`npm run dev`)
 

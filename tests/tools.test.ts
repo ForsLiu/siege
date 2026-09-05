@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { flagBool, flagInt, flagSeed, flagString, parseArgs, UsageError } from '../tools/args.ts';
 import { getPolicy, policyNames } from '../tools/policies/index.ts';
 import type { SweepJobResult } from '../tools/sweep-worker.ts';
-import { aggregate, DEFAULT_SWEEP_WORKERS, parsePolicies, resolveOutPath, resolveWorkers, runSweep } from '../tools/sweep.ts';
+import { aggregate, DEFAULT_JOB_TIMEOUT_MS, DEFAULT_SWEEP_WORKERS, MAX_JOB_TIMEOUT_MS, parsePolicies, resolveOutPath, resolveWorkers, runSweep } from '../tools/sweep.ts';
 
 describe('tools/args', () => {
   it('parses --key value, --key=value, bare flags and positionals', () => {
@@ -161,4 +161,68 @@ describe('tools/sweep robustness (P0-B2)', () => {
     expect(r.stderr).toMatch(/--out is a directory/);
     expect(Date.now() - t0).toBeLessThan(20_000);
   }, 60_000);
+});
+
+describe('tools/sweep worker liveness (P0-B3)', () => {
+  // The waits are shortened, but with room for a loaded host: the fast tier is the per-item
+  // gate and may run alongside a second lane, so a tight budget would make these flaky.
+  const stub = (seeds: number[], workers: number, workerData: Record<string, unknown>, jobTimeoutMs = 4000): Promise<SweepJobResult[]> =>
+    runSweep(seeds, ['random'], workers, {
+      workerUrl: new URL('./fixtures/crash-worker.ts', import.meta.url),
+      workerData: { role: 'sweep-double', ...workerData },
+      jobTimeoutMs,
+      exitGraceMs: 500,
+    });
+
+  it('a worker that never answers is timed out, not waited on forever', async () => {
+    const results = await stub([1, 2, 3, 4], 2, { silentSeeds: [2] });
+    expect(results.map((r) => r.seed)).toEqual([1, 2, 3, 4]);
+    const stuck = results.find((r) => r.seed === 2)!;
+    expect(stuck.ok).toBe(false);
+    expect(stuck.error).toMatch(/timed out/i);
+    expect(results.filter((r) => r.ok)).toHaveLength(3);
+  }, 60_000);
+
+  it('a worker that never exits does not hold up a finished sweep', async () => {
+    // Nothing here depends on the watchdog: the exit grace is what has to fire.
+    const results = await stub([1, 2, 3, 4], 2, { linger: true }, DEFAULT_JOB_TIMEOUT_MS);
+    expect(results.map((r) => r.seed)).toEqual([1, 2, 3, 4]);
+    expect(results.every((r) => r.ok)).toBe(true);
+  }, 60_000);
+
+  it('a wedged job never abandons the healthy jobs queued behind it', async () => {
+    // Two jobs wedge at the head of the queue; the six behind them must still run, and the
+    // outcome must not depend on --workers (an earlier timeout cap broke both).
+    // Five wedged jobs is more than any per-pool timeout budget would allow, which is what an
+    // earlier cap tripped over: it stopped feeding the queue and booked the rest as failures.
+    const wedged = [1, 2, 3, 4, 5, 6];
+    const seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const [twoWorkers, fourWorkers] = await Promise.all([
+      stub(seeds, 2, { silentSeeds: wedged }, 1500),
+      stub(seeds, 4, { silentSeeds: wedged }, 1500),
+    ]);
+    for (const results of [twoWorkers, fourWorkers]) {
+      expect(results.map((r) => r.seed)).toEqual(seeds);
+      expect(results.filter((r) => r.ok).map((r) => r.seed)).toEqual([7, 8, 9, 10, 11, 12]);
+    }
+    // A harness timeout is reported apart from a run that actually threw.
+    const agg = aggregate(twoWorkers, ['random'])[0]!;
+    expect(agg.exceptions).toBe(6);
+    expect(agg.timeouts).toBe(6);
+  }, 60_000);
+
+  it('--job-timeout is capped below the setTimeout overflow point', () => {
+    expect(MAX_JOB_TIMEOUT_MS).toBe(2_147_483_647);
+    expect(flagInt(parseArgs(['--job-timeout', String(MAX_JOB_TIMEOUT_MS)]), 'job-timeout', 1, { min: 1000, max: MAX_JOB_TIMEOUT_MS })).toBe(MAX_JOB_TIMEOUT_MS);
+    expect(() => flagInt(parseArgs(['--job-timeout', '2147483648']), 'job-timeout', 1, { min: 1000, max: MAX_JOB_TIMEOUT_MS })).toThrow(UsageError);
+  });
+
+  it('flagString rejects a bare flag, like flagInt does', () => {
+    expect(flagString(parseArgs(['--out', 'x.json']), 'out', 'd')).toBe('x.json');
+    expect(flagString(parseArgs([]), 'out', 'd')).toBe('d');
+    expect(() => flagString(parseArgs(['--out']), 'out', 'd')).toThrow(UsageError);
+    expect(() => flagString(parseArgs(['--policies']), 'policies', 'random')).toThrow(/--policies/);
+    // An explicitly empty value is just as unusable as a missing one.
+    expect(() => flagString(parseArgs(['--out=']), 'out', 'd')).toThrow(UsageError);
+  });
 });
