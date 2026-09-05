@@ -42,6 +42,6 @@ export function buildRunReport(state: RunState, commands: Command[], policy: str
     hashes: [...state.hashes],
     commandCount: state.commandCount,
     commands,
-    timings: { totalMs, fightTicks: state.history.reduce((s, r) => s + r.fight.ticks, 0) },
+    timings: { totalMs, fightTicks: state.history.reduce((s, r) => s + (r.fight?.ticks ?? 0), 0) },
   };
 }

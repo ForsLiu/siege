@@ -17,7 +17,9 @@ function walk(dir: string): string[] {
   return out;
 }
 
-const FORBIDDEN = ['__data/', 'dev-overlay', 'siege-dev-data', 'writeDataFile', 'readDataFile', 'DATA_ENDPOINT', 'dev/index', 'createOverlay', 'dev tools unavailable', '__SIEGE_DEV__'];
+// `devCommands:!0` / `devCommands:true` would mean a production bundle creating runs that
+// accept the `dev:` cheat namespace (P0-15); the minifier folds the DEV branch to `!1`.
+const FORBIDDEN = ['__data/', 'dev-overlay', 'siege-dev-data', 'writeDataFile', 'readDataFile', 'DATA_ENDPOINT', 'dev/index', 'createOverlay', 'dev tools unavailable', '__SIEGE_DEV__', 'devCommands:!0', 'devCommands: !0', 'devCommands:true', 'devCommands: true'];
 
 function buildAndScan(nodeEnv: string | undefined): { files: string[]; hits: string[] } {
   const env = { ...process.env };

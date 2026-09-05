@@ -126,7 +126,7 @@ function syncScreens(): void {
       hp: run.hp,
       seed: run.config.seed,
       finalHash: run.hashes[run.hashes.length - 1] ?? '',
-      lines: run.history.map((r) => `round ${String(r.round).padStart(2)}  ${r.fight.winner.padEnd(5)}  hp ${String(r.hpAfter).padStart(3)}  gold ${String(r.gold).padStart(3)}  lvl ${r.level}  ${r.board.join(' ')}`),
+      lines: run.history.map((r) => `round ${String(r.round).padStart(2)}  ${(r.fight ? r.fight.winner : 'skip').padEnd(5)}  hp ${String(r.hpAfter).padStart(3)}  gold ${String(r.gold).padStart(3)}  lvl ${r.level}  ${r.board.join(' ')}`),
     });
   } else {
     results.hide();
@@ -139,7 +139,8 @@ function syncScreens(): void {
 
 // ---- run control ----
 function startRun(seed: number): void {
-  run = createRun(seed, content);
+  // Dev builds accept the `dev:` command namespace (P0-15); `vite build` defines the flag false.
+  run = createRun(seed, content, { devCommands: __SIEGE_DEV__ });
   runSeed = seed;
   selectedUid = null;
   playback = null;

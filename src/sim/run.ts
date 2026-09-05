@@ -42,13 +42,31 @@ export interface RoundRecord {
   hpAfter: number;
   /** "defId@star" sorted, for composition curves. */
   board: string[];
-  fight: FightSummary;
+  /** null when `dev:skipRound` resolved the round instead of a fight. */
+  fight: FightSummary | null;
+  /** True when the round was skipped by a dev command. */
+  skipped: boolean;
 }
 
 export interface RunConfig {
   seed: number;
   contentHash: string;
   rulesVersion: number;
+  /** Dev builds set this; only then does the sim accept `dev:` commands. */
+  devCommands: boolean;
+}
+
+export interface RunOptions {
+  /** Accept `dev:` commands in this run. Production builds never set it. */
+  devCommands?: boolean;
+}
+
+/** Dev cheats that outlive a single command (set by the `dev:invincible*` commands). */
+export interface DevFlags {
+  /** Player units cannot drop below 1 hp during combat. */
+  invinciblePieces: boolean;
+  /** The player loses no hp from a lost or drawn round. */
+  invinciblePlayer: boolean;
 }
 
 export interface RunState {
@@ -73,6 +91,11 @@ export interface RunState {
   outcome: Outcome | null;
   endReason: EndReason | null;
   history: RoundRecord[];
+  /** Augment ids granted so far; `dev:addAugment` writes here until P0-24 owns it. */
+  augments: string[];
+  /** Item ids on the item bench; `dev:giveItem` writes here until P0-27 owns it. */
+  itemBench: string[];
+  dev: DevFlags;
   /** Round-boundary hashes: [0] after creation, then one per nextRound, plus one at run end. */
   hashes: string[];
   commandCount: number;
@@ -91,14 +114,14 @@ export function withRng<T>(state: RunState, stream: StreamName, fn: (rng: Rng) =
   return out;
 }
 
-export function createRun(seed: number, content: Content): RunState {
+export function createRun(seed: number, content: Content, options: RunOptions = {}): RunState {
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) throw new Error(`createRun: seed must be an integer in [0, 2^32), got ${seed}`);
   const eco = content.rules.economy;
   const pool: Record<string, number> = {};
   for (const u of content.units) pool[u.id] = eco.poolSize[String(u.cost)] ?? 0;
   const state: RunState = {
     version: 1,
-    config: { seed, contentHash: content.contentHash, rulesVersion: content.rules.version },
+    config: { seed, contentHash: content.contentHash, rulesVersion: content.rules.version, devCommands: options.devCommands === true },
     round: 1,
     phase: 'planning',
     gold: eco.startGold,
@@ -116,6 +139,9 @@ export function createRun(seed: number, content: Content): RunState {
     outcome: null,
     endReason: null,
     history: [],
+    augments: [],
+    itemBench: [],
+    dev: { invinciblePieces: false, invinciblePlayer: false },
     hashes: [],
     commandCount: 0,
   };
@@ -129,9 +155,9 @@ export function currentEncounter(state: RunState, content: Content): Encounter |
 }
 
 export function unitCost(defId: string, content: Content): number {
-  const def = content.unitsById[defId];
-  if (!def) throw new Error(`unknown unit ${defId}`);
-  return def.cost;
+  // Own-property lookup: an inherited key such as `constructor` must not pass as a unit.
+  if (!Object.hasOwn(content.unitsById, defId)) throw new Error(`unknown unit ${defId}`);
+  return (content.unitsById[defId] as { cost: number }).cost;
 }
 
 export function copiesForStar(star: number, content: Content): number {
@@ -176,29 +202,38 @@ function tierOrder(preferred: number, tiers: number): number[] {
   return out;
 }
 
-/** Draw one unit id from the pool for the given level, or null when the pool is empty. */
-export function drawUnit(state: RunState, content: Content, rng: Rng): string | null {
+/**
+ * Draw one unit id from the pool for the given level, or null when the pool is empty.
+ * `forcedTier` (0-based cost tier, used by `dev:openShop`) skips the odds roll — and with it
+ * the rng draw it would consume — and starts the tier fallback at that tier.
+ */
+export function drawUnit(state: RunState, content: Content, rng: Rng, forcedTier?: number): string | null {
   const eco = content.rules.economy;
   const odds = eco.shopOdds[String(state.level)] ?? eco.shopOdds[String(eco.maxLevel)] ?? [];
-  const roll = rng.next() * 100;
-  let acc = 0;
-  let tier = odds.length - 1;
-  for (let i = 0; i < odds.length; i++) {
-    acc += odds[i] as number;
-    if (roll < acc) {
-      tier = i;
-      break;
+  let tier: number;
+  if (forcedTier === undefined) {
+    const roll = rng.next() * 100;
+    let acc = 0;
+    tier = odds.length - 1;
+    for (let i = 0; i < odds.length; i++) {
+      acc += odds[i] as number;
+      if (roll < acc) {
+        tier = i;
+        break;
+      }
     }
+  } else {
+    tier = forcedTier;
   }
   for (const t of tierOrder(tier, odds.length)) {
     const cost = t + 1;
     let total = 0;
-    for (const u of content.units) if (u.cost === cost) total += state.pool[u.id] ?? 0;
+    for (const u of content.units) if (u.cost === cost) total += poolCount(state, u.id);
     if (total <= 0) continue;
     let pick = rng.int(total);
     for (const u of content.units) {
       if (u.cost !== cost) continue;
-      const n = state.pool[u.id] ?? 0;
+      const n = poolCount(state, u.id);
       if (pick < n) {
         state.pool[u.id] = n - 1;
         return u.id;
@@ -209,19 +244,63 @@ export function drawUnit(state: RunState, content: Content, rng: Rng): string | 
   return null;
 }
 
-export function returnToPool(state: RunState, defId: string, copies: number): void {
-  state.pool[defId] = (state.pool[defId] ?? 0) + copies;
+/** Own-property read of a pool count; inherited keys (`constructor`, `toString`) count as 0. */
+export function poolCount(state: RunState, defId: string): number {
+  return Object.hasOwn(state.pool, defId) ? (state.pool[defId] as number) : 0;
 }
 
-/** Return unsold shop units to the pool and draw a fresh shop. */
-export function refreshShop(state: RunState, content: Content): void {
+/** The configured maximum number of copies of a unit in the shared pool. */
+export function poolCapacity(defId: string, content: Content): number {
+  const def = content.unitsById[defId];
+  if (!def || !Object.hasOwn(content.unitsById, defId)) return 0;
+  return content.rules.economy.poolSize[String(def.cost)] ?? 0;
+}
+
+/**
+ * Return copies to the shared pool, never above the configured pool size for the unit.
+ * The cap matters once `dev:spawnUnit` hands out copies the pool could not cover: without it,
+ * selling them would inflate the pool past its data-defined size and skew shop odds.
+ */
+export function returnToPool(state: RunState, defId: string, copies: number, content: Content): void {
+  const capacity = poolCapacity(defId, content);
+  const next = poolCount(state, defId) + copies;
+  state.pool[defId] = next > capacity ? capacity : next;
+}
+
+/**
+ * Remove up to `copies` of a unit from the shared pool and return how many were actually taken.
+ * Used by `dev:spawnUnit`: a cheat may conjure a unit the pool has run out of, but it must never
+ * drive a pool count negative (checkInvariants).
+ */
+export function takeFromPool(state: RunState, defId: string, copies: number): number {
+  const have = poolCount(state, defId);
+  const taken = Math.min(have, Math.max(0, copies));
+  state.pool[defId] = have - taken;
+  return taken;
+}
+
+/** Number of cost tiers the shop odds define (tier 1 = cost 1). */
+export function shopTierCount(content: Content): number {
+  let n = 0;
+  for (const odds of Object.values(content.rules.economy.shopOdds)) if (odds.length > n) n = odds.length;
+  if (n === 0) for (const u of content.units) if (u.cost > n) n = u.cost;
+  return n;
+}
+
+/**
+ * Return unsold shop units to the pool and draw a fresh shop. `tier` (1-based cost, used by
+ * `dev:openShop`) forces every slot into that tier, falling back to the neighbouring tiers
+ * exactly like a normal draw when its pool is empty.
+ */
+export function refreshShop(state: RunState, content: Content, tier?: number): void {
   for (let i = 0; i < state.shop.length; i++) {
     const id = state.shop[i];
-    if (id) returnToPool(state, id, 1);
+    if (id) returnToPool(state, id, 1, content);
     state.shop[i] = null;
   }
+  const forcedTier = tier === undefined ? undefined : tier - 1;
   withRng(state, 'shop', (rng) => {
-    for (let i = 0; i < state.shop.length; i++) state.shop[i] = drawUnit(state, content, rng);
+    for (let i = 0; i < state.shop.length; i++) state.shop[i] = drawUnit(state, content, rng, forcedTier);
   });
 }
 
@@ -313,10 +392,13 @@ export function resolveCombat(state: RunState, content: Content): CombatOutcome 
   if (!encounter) throw new Error(`resolveCombat: no encounter for round ${state.round}`);
   const seed = withRng(state, 'combat', (rng) => rng.nextU32());
   const left: BoardUnit[] = state.board.map((u) => ({ defId: u.defId, star: u.star, col: u.col, row: u.row }));
-  const result = fight(left, encounter.board, seed, fightRulesFrom(content));
+  const rules = fightRulesFrom(content);
+  // dev:invinciblePieces keeps the player's units above 0 hp for this fight (dev builds only).
+  if (state.dev.invinciblePieces) rules.invincible = { left: true, right: false };
+  const result = fight(left, encounter.board, seed, rules);
   const won = result.winner === 'left';
   const lostForHp = result.winner === 'right' || (result.winner === 'draw' && content.rules.combat.drawCountsAsLoss);
-  const hpLoss = lostForHp ? hpLossFor(state.round, result.survivors.right.length, content) : 0;
+  const hpLoss = lostForHp && !state.dev.invinciblePlayer ? hpLossFor(state.round, result.survivors.right.length, content) : 0;
   const hpBefore = state.hp;
   state.hp = Math.max(0, state.hp - hpLoss);
   const summary: FightSummary = {
@@ -341,6 +423,7 @@ export function resolveCombat(state: RunState, content: Content): CombatOutcome 
     hpAfter: state.hp,
     board: boardComposition(state),
     fight: summary,
+    skipped: false,
   });
   if (state.hp <= 0) {
     endRun(state, 'loss', 'defeat');
@@ -353,6 +436,34 @@ export function resolveCombat(state: RunState, content: Content): CombatOutcome 
     state.phase = 'reward';
   }
   return { result, summary };
+}
+
+/**
+ * `dev:skipRound`: resolve the current round as a win with the normal rewards, without a fight.
+ * No fight runs, so the `combat` stream is untouched and the round record carries `fight: null`.
+ */
+export function skipRoundAsWin(state: RunState, content: Content): void {
+  const encounter = currentEncounter(state, content);
+  if (!encounter) throw new Error(`skipRoundAsWin: no encounter for round ${state.round}`);
+  state.lastFight = null;
+  state.history.push({
+    round: state.round,
+    encounterId: encounter.id,
+    gold: state.gold,
+    level: state.level,
+    xp: state.xp,
+    hpBefore: state.hp,
+    hpAfter: state.hp,
+    board: boardComposition(state),
+    fight: null,
+    skipped: true,
+  });
+  if (state.round >= content.encounters.length) {
+    endRun(state, 'win', 'victory');
+    return;
+  }
+  state.pendingReward = computeReward(state, true, encounter, content);
+  state.phase = 'reward';
 }
 
 export function endRun(state: RunState, outcome: Outcome, reason: EndReason): void {

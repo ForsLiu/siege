@@ -136,6 +136,8 @@ class FightSim implements EffectHost<FightUnit> {
   private seq = 0;
   /** Depth guard for hook chains (onTakeDamage -> damage -> onTakeDamage -> ...). */
   private hookDepth = 0;
+  /** Per team: damage may not take these units below 1 hp (rules.invincible, a dev cheat). */
+  private readonly invincible: [boolean, boolean];
 
   constructor(rules: FightRules, seed: number) {
     this.rules = rules;
@@ -146,6 +148,7 @@ class FightSim implements EffectHost<FightUnit> {
     // stable tie-break. It is the seam for seeded effects (crits, spreads) in P0-01/P0-02.
     this.rng = Rng.fromSeed(seed, 'combat');
     this.moveTicks = Math.max(1, Math.round(rules.combat.moveSecondsPerHex * rules.tickRate));
+    this.invincible = [rules.invincible?.left ?? false, rules.invincible?.right ?? false];
   }
 
   unit(uid: number): FightUnit {
@@ -258,7 +261,12 @@ class FightSim implements EffectHost<FightUnit> {
     const mitigated = raw - afterMitigation;
     // stage: shield
     const absorbed = this.absorb(tgt, afterMitigation);
-    const applied = afterMitigation - absorbed;
+    const unclamped = afterMitigation - absorbed;
+    // Invincibility (dev cheat) clamps the applied part so hp stops at 1. The ledger and the
+    // hit event report the clamped amount (they measure hp actually removed); `unclamped` only
+    // keeps onTakeDamage firing, so the cheat changes nothing but the dying.
+    let applied = unclamped;
+    if (this.invincible[tgt.team] && applied > tgt.hp - 1) applied = Math.max(0, tgt.hp - 1);
     // stage: post
     tgt.hp -= applied;
     this.gainMana(tgt, this.rules.combat.manaOnHitTaken);
@@ -285,7 +293,7 @@ class FightSim implements EffectHost<FightUnit> {
       this.kill(src, tgt);
       return;
     }
-    if (applied > 0 || absorbed > 0) this.fireHook(tgt, 'onTakeDamage', src);
+    if (unclamped > 0 || absorbed > 0) this.fireHook(tgt, 'onTakeDamage', src);
   }
 
   /** Consume shields for `amount`; returns the absorbed part. Soonest expiry first, then oldest. */

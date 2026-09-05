@@ -73,6 +73,12 @@ export interface FightRules {
   board: BoardConfig;
   units: Record<string, UnitDef>;
   projectiles: Record<string, ProjectileDef>;
+  /**
+   * Dev cheat (`dev:invinciblePieces`): damage cannot take a side's units below 1 hp.
+   * Absent in production runs; it is an argument like any other, so fights stay pure and
+   * a run that used it still replays hash for hash.
+   */
+  invincible?: { left: boolean; right: boolean };
 }
 
 /** Everything a run needs. Built by src/data from the JSON files. */
