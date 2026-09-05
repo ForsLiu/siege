@@ -28,7 +28,7 @@ describe('vitest worker count (P0-B3)', () => {
     }
   });
 
-  it('a real vitest run with an invalid worker count fails loudly instead of collecting nothing', () => {
+  const runVitest = (workers: string): { status: number | null; output: string; error: Error | undefined } => {
     const vitest = fileURLToPath(new URL('../node_modules/vitest/vitest.mjs', import.meta.url));
     const r = spawnSync(process.execPath, [vitest, 'run', 'tests/hex.test.ts'], {
       cwd: REPO_ROOT,
@@ -37,9 +37,27 @@ describe('vitest worker count (P0-B3)', () => {
       // output rather than as a bare harness timeout.
       timeout: 60_000,
       // Vitest's own pool variables are dropped: the child must not look like a worker of this run.
-      env: { ...process.env, VITEST_POOL_ID: undefined, VITEST_WORKER_ID: undefined, SIEGE_TEST_WORKERS: '-5' },
+      env: { ...process.env, VITEST_POOL_ID: undefined, VITEST_WORKER_ID: undefined, SIEGE_TEST_WORKERS: workers },
     });
-    expect(r.status, `stdout: ${r.stdout}\nstderr: ${r.stderr}`).not.toBe(0);
-    expect(`${r.stdout}${r.stderr}`).toMatch(/SIEGE_TEST_WORKERS/);
+    return { status: r.status, output: `${r.stdout}${r.stderr}`, error: r.error };
+  };
+
+  it('a real vitest run with an invalid worker count fails loudly instead of collecting nothing', () => {
+    const r = runVitest('-5');
+    // A spawn that never started or timed out leaves status null, which would satisfy
+    // `not.toBe(0)` for the wrong reason (QA on P0-B3).
+    expect(r.error, `spawn failed: ${String(r.error)}`).toBeUndefined();
+    expect(r.status, r.output).not.toBeNull();
+    expect(r.status, r.output).not.toBe(0);
+    expect(r.output).toMatch(/SIEGE_TEST_WORKERS/);
+  }, 120_000);
+
+  it('a real vitest run with a count above the cap clamps and still collects test files', () => {
+    // The other half of the gate: the invalid case must fail, and the valid case must actually
+    // run something. Without this, a parser that threw on every value would look fixed.
+    const r = runVitest('96');
+    expect(r.error, `spawn failed: ${String(r.error)}`).toBeUndefined();
+    expect(r.status, r.output).toBe(0);
+    expect(r.output).toMatch(/Test Files\s+1 passed/);
   }, 120_000);
 });

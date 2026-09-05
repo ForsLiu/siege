@@ -1,14 +1,14 @@
 # PROGRESS.md — Siege
 
 ## State
-Bootstrap complete (2026-09-05). Cloud mode adopted (feedback/cloud-mode.md; see CLAUDE.md "Cloud task contract"). P0-01 (effect vocabulary v1), P0-B1 (sweep workers) and P0-B2 (sweep robustness) are done: shields, tags, auras, projectiles, the ordered damage pipeline and the extended per-unit ledger are in, with `data/dev/` content that exercises every effect and trigger. No SPEC.md yet: all content in `data/dev/` is provisional (see QUESTIONS.md BOOT-01…15 and P0-01-01…13). Owner playtest round 1 (7 feedback files) is processed: the hex-board verdict is recorded verbatim under Owner overrides, and the six requests became items P0-15…P0-31 at the top of P0 (dev cheat commands and panel, battle sandbox, unit inspector, run HUD, augments, traits, items, combat FX) — see QUESTIONS.md FB-01…FB-04 for the ordering and the gating decisions.
+Bootstrap complete (2026-09-05). Cloud mode adopted (feedback/cloud-mode.md; see CLAUDE.md "Cloud task contract"). P0-01 (effect vocabulary v1), P0-B1 (sweep workers), P0-B2 (sweep robustness) and P0-B3 (test worker count) are done: shields, tags, auras, projectiles, the ordered damage pipeline and the extended per-unit ledger are in, with `data/dev/` content that exercises every effect and trigger. No SPEC.md yet: all content in `data/dev/` is provisional (see QUESTIONS.md BOOT-01…15 and P0-01-01…13). Owner playtest round 1 (7 feedback files) is processed: the hex-board verdict is recorded verbatim under Owner overrides, and the six requests became items P0-15…P0-31 at the top of P0 (dev cheat commands and panel, battle sandbox, unit inspector, run HUD, augments, traits, items, combat FX) — see QUESTIONS.md FB-01…FB-04 for the ordering and the gating decisions.
 
 ## Next action
-Run the loop on BACKLOG.md P0, top-down: P0-B3 (an invalid `SIEGE_TEST_WORKERS` runs zero tests and still exits 0 — it can make the per-item gate report green having run nothing, so it comes first), then P0-B4 and P0-B5, then the owner playtest items from P0-15.
+Run the loop on BACKLOG.md P0, top-down: P0-B4 (CLIs ignore typo'd flags), P0-B5 (sweep watchdog + CLI failure-path test), P0-B6 (`--maxWorkers=-5` still empties the gate), then the owner playtest items from P0-15 (dev commands, dev panel, sandbox, inspector, run HUD).
 
 ## Pipeline checks
 - `npm run check` — green (tsc + architecture test).
-- `npm run test:fast` — green, 198 tests + 1 documented skip in 12 files; measured wall time **~2.7 s** (limit 5 min).
+- `npm run test:fast` — green, 204 tests + 1 documented skip in 13 files; measured wall time **~4 s** (limit 5 min). It now spawns two nested vitest runs (tests/config.test.ts) to prove the gate cannot be silenced; they cost ~1.5 s.
 - `npm test` (full, includes `tests/slow/build.test.ts`, two production builds) — last run at bootstrap; the next full run is due at P0 phase completion.
 - Review: code-reviewer (REQUEST-CHANGES → all findings fixed except BOOT-16, logged) and qa-playtester (PASS on all acceptance criteria; 7 filed bugs fixed, bug 2's regression test deferred to P0-09).
 - `npm run fight -- --seed 1 --left data/dev/boards/a.json --right data/dev/boards/b.json` — prints winner, ticks, survivors, ledger, hash.
@@ -22,7 +22,7 @@ Run the loop on BACKLOG.md P0, top-down: P0-B3 (an invalid `SIEGE_TEST_WORKERS` 
 See README.md: `dev`, `build`, `preview`, `check`, `test`, `test:fast`, `fight`, `sim`, `sweep` (`npx tsx tools/sweep.ts`), `bench`.
 
 ## Known issues
-- `SIEGE_TEST_WORKERS=-5` (or any negative) makes vitest collect nothing and still exit 0, so the per-item gate can report green having run no tests. Filed as P0-B3; until it is fixed, do not set that variable to anything but a positive integer.
+- `npm run test:fast -- --maxWorkers=-5` still collects nothing and exits 0: P0-B3 fixed the `SIEGE_TEST_WORKERS` route into that failure, but vitest does not validate the `--maxWorkers` flag itself. Filed as P0-B6; never pass a worker count as a flag, use the env var.
 - `tools/*` CLIs ignore unknown flags and stray positionals, so a typo (`--seed` for `--seeds`) silently runs a different sweep. Filed as P0-B4.
 - CLAUDE.md and the sweep/sim headers document a `greedy` policy that does not exist yet (`--policies random,greedy` is a usage error). P0-04 adds it.
 - Fight resolution is sequential in uid order (left side acts first each tick), so a lethal board against its own mirror is not guaranteed to draw. Documented in QUESTIONS.md BOOT-16 with a `.skip` regression test (tests/fight.test.ts); P0-03 decides.
@@ -32,6 +32,7 @@ See README.md: `dev`, `build`, `preview`, `check`, `test`, `test:fast`, `fight`,
 - Hook chains are cut at `combat.maxHookDepth` (8): effects beyond that depth silently do not run.
 
 ## Log
+- 2026-09-05 P0-B3 test worker count — an invalid `SIEGE_TEST_WORKERS` made vitest collect nothing and still exit 0; `tools/testWorkers.ts` now throws on an unusable value and clamps above the cap (QUESTIONS.md P0-B3-01/02). code-reviewer APPROVE with minors (clamp instead of reject, spawn timeout, pruned child env) and qa-playtester PASS on all four criteria with 4 findings — 3 fixed here (stale docs, no positive end-to-end case, spawn assertions passing for the wrong reason), the flag route filed as P0-B6
 - 2026-09-05 fb: owner playtest round 1 — hex verdict recorded verbatim; 6 requests filed as P0-15…P0-31 (QUESTIONS.md FB-01…FB-04)
 - 2026-09-05 P0-B2 sweep robustness — a dead worker no longer discards the sweep (one result per (policy, seed) always), `--out` and `SIEGE_SWEEP_WORKERS` are pre-flighted, duplicate policies de-duplicated; code-reviewer REQUEST-CHANGES (Major: a synchronous `new Worker` throw still sank the sweep) fixed with a regression test, qa-playtester PASS on all four acceptance criteria with 8 findings — 2 fixed here (meanMs diluted by jobs that never ran; the env/flag whitespace parity claim), the rest filed as P0-B3/B4/B5
 - 2026-09-04 infrastructure committed
