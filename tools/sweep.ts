@@ -1,7 +1,8 @@
 // npx tsx tools/sweep.ts --seeds 50 --policies random [--workers 4] [--start 1] [--out bench/sweep-<stamp>.json]
-// Runs seeds x policies in worker threads (cap SIEGE_SWEEP_WORKERS, default 4), prints a table,
-// writes bench/sweep-<stamp>.json (gitignored).
-import { mkdirSync, statSync, writeFileSync } from 'node:fs';
+// Runs seeds x policies in worker threads (cap SIEGE_SWEEP_WORKERS, default 4, validated 1..64),
+// prints a table, writes bench/sweep-<stamp>.json (gitignored). A worker that dies costs only the
+// job it was holding: every (policy, seed) pair always gets exactly one result (P0-B2).
+import { closeSync, mkdirSync, openSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { REPO_ROOT, loadContentFromDisk } from '../src/data/node.ts';
@@ -70,7 +71,7 @@ export interface SweepOptions {
 }
 
 function jobKey(job: { seed: number; policy: string }): string {
-  return `${job.policy}#${job.seed}`;
+  return `${job.policy}\u0000${job.seed}`;
 }
 
 /** A job no worker lived long enough to answer. Keeps one result per job, so nothing is silently lost. */
@@ -130,7 +131,16 @@ export async function runSweep(
       // No execArgv: the worker's module graph is loaded by Node's own type stripping, so it
       // must stay erasable (enforced by tsconfig's erasableSyntaxOnly). A `--import tsx` preload
       // would resolve tsx relative to the process CWD and fail outside the repo root (P0-B1).
-      const w = new Worker(workerUrl, { workerData: opts.workerData ?? { role: 'sweep' } });
+      // The constructor itself can throw synchronously (thread-creation failure, un-cloneable
+      // workerData). No job is in flight yet, so resolving leaves the queue to the other workers
+      // and to the fallback loop below; throwing here would sink the whole sweep again.
+      let w: Worker;
+      try {
+        w = new Worker(workerUrl, { workerData: opts.workerData ?? { role: 'sweep' } });
+      } catch {
+        resolveWorker();
+        return;
+      }
       const inFlight = new Map<string, SweepJob>();
       let failure: string | null = null;
       const feed = (): void => {
@@ -143,6 +153,9 @@ export async function runSweep(
         w.postMessage(job);
       };
       w.on('message', (r: SweepJobResult) => {
+        // A result for a job this worker was never given means the protocol is broken (two
+        // listeners on one port, say). Dropping it keeps the job queue honest.
+        if (!inFlight.has(jobKey(r))) return;
         inFlight.delete(jobKey(r));
         done.set(jobKey(r), r);
         feed();
@@ -168,7 +181,9 @@ export async function runSweep(
 }
 
 function sortResults(results: SweepJobResult[]): SweepJobResult[] {
-  results.sort((a, b) => a.policy.localeCompare(b.policy) || a.seed - b.seed);
+  // Plain code-unit comparison, not localeCompare: the report order is a persisted
+  // artifact and must not depend on the host's ICU data.
+  results.sort((a, b) => (a.policy < b.policy ? -1 : a.policy > b.policy ? 1 : 0) || a.seed - b.seed);
   return results;
 }
 
@@ -229,10 +244,13 @@ export function prepareOutPath(outPath: string): string {
   if (stat?.isDirectory()) throw new UsageError(`--out is a directory, expected a file path: ${outPath}`);
   try {
     mkdirSync(dirname(full), { recursive: true });
+    // Touching the file now turns a permission problem into a usage error before the sweep
+    // runs, instead of an EACCES thrown once every job is already computed.
+    closeSync(openSync(full, 'a'));
   } catch (e) {
-    throw new UsageError(`--out directory cannot be created: ${dirname(outPath)} (${e instanceof Error ? e.message : String(e)})`);
+    throw new UsageError(`--out is not writable: ${outPath} (${e instanceof Error ? e.message : String(e)})`);
   }
-  return outPath;
+  return full;
 }
 
 async function main(): Promise<void> {

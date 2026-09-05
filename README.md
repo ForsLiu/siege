@@ -23,7 +23,7 @@ Stack: TypeScript (strict) · Vite · HTML canvas 2D · Vitest · zod · Node 22
 | `npx tsx tools/sweep.ts --seeds 50 --policies random [--start 1] [--workers 4]` | seeds × policies in worker threads; aggregate table (win rate, mean rounds survived, fight length mean/p95, exceptions); writes `bench/sweep-<stamp>.json` (gitignored) |
 | `npm run bench [-- --seconds 3]` | fights/sec and ticks/sec on a fixed dev matchup plus a host-independent budget (sim ticks per baseline hash) |
 
-Environment: `SIEGE_TEST_WORKERS` (vitest workers, default 4), `SIEGE_SWEEP_WORKERS` (sweep worker threads, default 4).
+Environment: `SIEGE_TEST_WORKERS` (vitest workers, default 4), `SIEGE_SWEEP_WORKERS` (sweep worker threads, default 4). They are separate knobs: the sweep never reads `SIEGE_TEST_WORKERS`. `SIEGE_SWEEP_WORKERS` is validated exactly like `--workers` (integer, 1..64); anything else is a usage error rather than a silent fallback.
 
 ## Playing (`npm run dev`)
 

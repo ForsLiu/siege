@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { flagBool, flagInt, flagSeed, flagString, parseArgs, UsageError } from '../tools/args.ts';
@@ -87,12 +87,24 @@ describe('tools/sweep robustness (P0-B2)', () => {
   }, 60_000);
 
   it('every job still gets a result when no worker survives', async () => {
-    const results = await runSweep([2, 4], ['random'], 2, crash);
-    expect(results.map((r) => r.seed)).toEqual([2, 4]);
+    // Both workers die on their first (even) job, so seeds 2 and 4 fail through the exit
+    // handler and seeds 6 and 8 are never assigned at all — the two different loss paths.
+    const results = await runSweep([2, 4, 6, 8], ['random'], 2, crash);
+    expect(results.map((r) => r.seed)).toEqual([2, 4, 6, 8]);
     for (const r of results) {
-      expect(r.ok).toBe(false);
+      expect(r.ok, `seed ${r.seed}`).toBe(false);
       expect(r.error).toBeTruthy();
     }
+    expect(results.filter((r) => /worker exited with 7/.test(r.error ?? ''))).toHaveLength(2);
+    expect(results.filter((r) => /no worker survived/.test(r.error ?? ''))).toHaveLength(2);
+  }, 60_000);
+
+  it('a sweep survives a worker that cannot even be constructed', async () => {
+    // An un-cloneable workerData makes `new Worker` throw synchronously. Before P0-B2's fix
+    // that rejected runSweep itself and discarded everything.
+    const results = await runSweep([1, 2], ['random'], 2, { workerData: { role: 'sweep', fn: () => 1 } });
+    expect(results.map((r) => r.seed)).toEqual([1, 2]);
+    for (const r of results) expect(r.ok).toBe(false);
   }, 60_000);
 
   it('de-duplicates policies and (seed, policy) jobs', async () => {
@@ -116,10 +128,26 @@ describe('tools/sweep robustness (P0-B2)', () => {
     }
   });
 
+  it('the CLI refuses a bad --out before running any job', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'siege-sweep-cli-'));
+    const cli = fileURLToPath(new URL('../tools/sweep.ts', import.meta.url));
+    const t0 = Date.now();
+    // 400 seeds would take many seconds to sweep; failing fast is the point of the check.
+    const r = spawnSync(process.execPath, ['--experimental-strip-types', cli, '--seeds', '400', '--out', dir], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      cwd: fileURLToPath(new URL('..', import.meta.url)),
+    });
+    expect(r.status, r.stderr).toBe(1);
+    expect(r.stderr).toMatch(/--out is a directory/);
+    expect(Date.now() - t0).toBeLessThan(20_000);
+    rmSync(dir, { recursive: true, force: true });
+  }, 60_000);
+
   it('prepares --out before any job runs: nested dirs are created, a directory path is refused', () => {
     const dir = mkdtempSync(join(tmpdir(), 'siege-sweep-'));
     const nested = join(dir, 'a', 'b', 'report.json');
-    expect(prepareOutPath(nested)).toBe(nested);
+    expect(prepareOutPath(nested)).toBe(resolve(nested));
     expect(existsSync(dirname(nested))).toBe(true);
     expect(() => prepareOutPath(dir)).toThrow(UsageError);
     // A file where a directory has to be is refused too, rather than throwing ENOTDIR later.
