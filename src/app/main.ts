@@ -341,7 +341,7 @@ function frame(ts: number): void {
 
 function drawPlayback(p: Playback): void {
   const idx = Math.min(p.timeline.frames.length - 1, Math.max(0, Math.floor(p.tick)));
-  renderer.drawFight({ frame: p.timeline.frames[idx] ?? [], tick: p.tick, moveTicks, content });
+  renderer.drawFight({ frame: p.timeline.frames[idx] ?? [], shots: p.timeline.shots[idx] ?? [], tick: p.tick, moveTicks, content });
 }
 
 if (__SIEGE_DEV__) {

@@ -1,8 +1,8 @@
 // zod schemas for every /data file. Unknown keys and unknown effect names are rejected.
 // Traits, items and augments arrive with SPEC.md: add their schemas here (see EXTENSION POINTS).
 import { z } from 'zod';
-import { DAMAGE_KINDS, HOOK_NAMES, TARGET_SELS } from '../sim/effects.ts';
-import type { AuraDef, AuraEffect, Effect, Hooks, ProjectileDef } from '../sim/effects.ts';
+import { DAMAGE_KINDS, HOOK_NAMES, TARGET_ANCHORS, TARGET_SELS, TARGET_TEAMS } from '../sim/effects.ts';
+import type { AuraDef, AuraEffect, Effect, Hooks, ProjectileDef, TargetSel, TargetShape } from '../sim/effects.ts';
 import type { BoardConfig } from '../sim/hex.ts';
 import type { Encounter, Rules } from '../sim/rules.ts';
 import { STAT_KIND, STAT_MAX, STAT_NAMES } from '../sim/stats.ts';
@@ -32,7 +32,20 @@ export const StatBlockSchema = z.strictObject({
 }) satisfies z.ZodType<StatBlock>;
 
 const ScalingSchema = z.strictObject({ stat: StatNameSchema, factor: statSigned });
-const TargetSchema = z.enum(TARGET_SELS);
+
+/** Board size bounds the useful range of a shape or an aura; the cap only keeps data honest. */
+const SHAPE_MAX = 64;
+const anchor = z.enum(TARGET_ANCHORS);
+const team = z.enum(TARGET_TEAMS);
+
+export const TargetShapeSchema = z.discriminatedUnion('shape', [
+  z.strictObject({ shape: z.literal('radius'), radius: z.number().int().min(0).max(SHAPE_MAX), from: anchor, team }),
+  z.strictObject({ shape: z.literal('line'), length: z.number().int().min(1).max(SHAPE_MAX), from: anchor, team }),
+  z.strictObject({ shape: z.literal('nearest'), k: z.number().int().min(1).max(SHAPE_MAX), from: anchor, team }),
+]) satisfies z.ZodType<TargetShape>;
+
+/** A plain selector name, or a geometric shape on the hex grid. */
+const TargetSchema = z.union([z.enum(TARGET_SELS), TargetShapeSchema]) satisfies z.ZodType<TargetSel>;
 
 const duration = z.number().finite().positive();
 /** Tag names share the unit-id shape so data stays greppable. */
@@ -75,7 +88,7 @@ export const AuraEffectSchema = z
   .refine((e) => e.duration === null, { message: 'aura effects must have duration null (the aura controls them)', path: ['duration'] }) satisfies z.ZodType<AuraEffect>;
 
 export const AuraSchema = z.strictObject({
-  range: z.number().int().min(0).max(64),
+  range: z.number().int().min(0).max(SHAPE_MAX),
   effects: z.array(AuraEffectSchema).min(1),
 }) satisfies z.ZodType<AuraDef>;
 
@@ -99,6 +112,7 @@ export const UnitDefSchema = z.strictObject({
   ability: z.strictObject({ name: z.string().min(1), effects: z.array(EffectSchema) }).nullable(),
   hooks: HooksSchema,
   aura: AuraSchema.nullable().default(null),
+  attackProjectile: z.string().regex(/^[a-z0-9_.-]+$/).nullable().default(null),
   // EXTENSION POINTS (SPEC): traits: z.array(TraitId), itemSlots, ...
 }) satisfies z.ZodType<UnitDef>;
 

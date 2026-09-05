@@ -1,9 +1,9 @@
 // fight(left, right, seed, rules) -> FightResult. Pure: reads only its arguments.
 // Fixed tick rate from rules; units act in uid order each tick; all tie-breaks are stable.
-import type { AuraEffect, DamageKind, HookName, ProjectileDef, TargetSel } from './effects.ts';
-import { runEffects, type EffectHost } from './effects.ts';
+import type { AuraEffect, DamageKind, HookName, ProjectileDef, TargetSel, TargetShape, TargetTeam } from './effects.ts';
+import { isTargetShape, runEffects, type EffectHost } from './effects.ts';
 import { hashValue } from './hash.ts';
-import { bfsPath, cellIndex, floodDistances, hexDistance, indexToCell, mirrorCell, inBounds, MIRROR_DIR_OFFSET, type BoardConfig, type Cell } from './hex.ts';
+import { bfsPath, cellIndex, floodDistances, hexDistance, hexLine, indexToCell, mirrorCell, inBounds, MIRROR_DIR_OFFSET, type BoardConfig, type Cell } from './hex.ts';
 import { Rng } from './rng.ts';
 import type { FightRules } from './rules.ts';
 import type { Modifier, StatName } from './stats.ts';
@@ -60,6 +60,8 @@ export interface Projectile {
   ownerUid: number;
   targetUid: number;
   arrivalTick: number;
+  /** 'attack' projectiles carry a basic attack, and fire the owner's onHit hook on impact. */
+  cause: 'attack' | 'effect';
 }
 
 export type FightEvent = { tick: number } & (
@@ -75,7 +77,7 @@ export type FightEvent = { tick: number } & (
   | { type: 'shield'; uid: number; target: number; amount: number; shieldAfter: number; expiresTick: number | null; source: string }
   | { type: 'tag'; uid: number; tag: string; expiresTick: number | null; source: string; active: boolean }
   | { type: 'stun'; uid: number; untilTick: number; cause: string }
-  | { type: 'projectile'; uid: number; target: number; ref: string; arrivalTick: number }
+  | { type: 'projectile'; uid: number; target: number; ref: string; arrivalTick: number; from: Cell; to: Cell }
   | { type: 'projectileHit'; uid: number; target: number; ref: string }
   | { type: 'projectileFizzle'; uid: number; target: number; ref: string }
   | { type: 'cast'; uid: number; target: number; ability: string; manaAfter: number }
@@ -222,6 +224,7 @@ class FightSim implements EffectHost<FightUnit> {
   }
 
   resolveTargets(sel: TargetSel, self: FightUnit, other: FightUnit | null): FightUnit[] {
+    if (isTargetShape(sel)) return this.resolveShape(sel, self, other);
     switch (sel) {
       case 'self':
         return [self];
@@ -234,6 +237,54 @@ class FightSim implements EffectHost<FightUnit> {
       default: {
         const never: never = sel;
         throw new Error(`fight: unknown target selector ${String(never)}`);
+      }
+    }
+  }
+
+  /** Units of `team` relative to `self`, alive, in uid order. */
+  private teamUnits(team: TargetTeam, self: FightUnit): FightUnit[] {
+    return this.units.filter((u) => u.alive && (team === 'all' || (team === 'allies') === (u.team === self.team)));
+  }
+
+  /**
+   * Geometric selectors. The anchor is the unit itself or its contextual target, which must be
+   * alive — the plain `target` selector requires that too, and a hook like onKill hands over a
+   * corpse. Results are returned in uid order (`nearest` picks by distance, then uid, then
+   * returns them in uid order), so no shape can make the outcome depend on iteration order.
+   * `allies` and `all` include the unit itself, exactly as the plain selectors do.
+   */
+  private resolveShape(sel: TargetShape, self: FightUnit, other: FightUnit | null): FightUnit[] {
+    const anchor = sel.from === 'self' ? self : other;
+    if (anchor === null || !anchor.alive) return [];
+    const candidates = this.teamUnits(sel.team, self);
+    switch (sel.shape) {
+      case 'radius':
+        return candidates.filter((u) => hexDistance(anchor, u) <= sel.radius);
+      case 'nearest': {
+        const byDistance = candidates
+          .map((u) => ({ u, d: hexDistance(anchor, u) }))
+          .sort((a, b) => a.d - b.d || a.u.uid - b.u.uid)
+          .slice(0, Math.max(0, sel.k));
+        return byDistance.map((e) => e.u).sort((a, b) => a.uid - b.uid);
+      }
+      case 'line': {
+        // The line runs from the anchor through the contextual target and on past it; with no
+        // such unit there is no direction and nothing is hit. `hexLine`'s tie-break is not
+        // symmetric under point reflection, so team 1 walks the line on mirrored coordinates
+        // and mirrors the result back: its geometry is then exactly the mirror of team 0's.
+        const toward = sel.from === 'self' ? other : self;
+        if (toward === null || !toward.alive) return [];
+        const mirror = (c: Cell): Cell => mirrorCell(c, this.board);
+        const cells =
+          self.team === 0
+            ? hexLine(anchor, toward, sel.length, this.board)
+            : hexLine(mirror(anchor), mirror(toward), sel.length, this.board).map(mirror);
+        const hit = new Set(cells.map((c) => cellIndex(c, this.board)));
+        return candidates.filter((u) => hit.has(cellIndex(u, this.board)));
+      }
+      default: {
+        const never: never = sel;
+        throw new Error(`fight: unknown target shape ${JSON.stringify(never)}`);
       }
     }
   }
@@ -378,12 +429,25 @@ class FightSim implements EffectHost<FightUnit> {
    * so a moving target does not change the arrival tick (P0-02 refines travel and shapes).
    */
   spawnProjectile(src: FightUnit, tgt: FightUnit, ref: string, _source: string): void {
+    this.launch(src, tgt, ref, 'effect');
+  }
+
+  private launch(src: FightUnit, tgt: FightUnit, ref: string, cause: 'attack' | 'effect'): void {
     const def = this.projectileDef(ref);
     const dist = hexDistance(src, tgt);
     const travel = dist === 0 ? 1 : Math.max(1, Math.round((dist / def.speed) * this.tickRate));
     const arrivalTick = this.tick + travel;
-    this.projectiles.push({ seq: this.seq++, ref, ownerUid: src.uid, targetUid: tgt.uid, arrivalTick });
-    this.events.push({ tick: this.tick, type: 'projectile', uid: src.uid, target: tgt.uid, ref, arrivalTick });
+    this.projectiles.push({ seq: this.seq++, ref, ownerUid: src.uid, targetUid: tgt.uid, arrivalTick, cause });
+    this.events.push({
+      tick: this.tick,
+      type: 'projectile',
+      uid: src.uid,
+      target: tgt.uid,
+      ref,
+      arrivalTick,
+      from: { col: src.col, row: src.row },
+      to: { col: tgt.col, row: tgt.row },
+    });
   }
 
   private projectileDef(ref: string): ProjectileDef {
@@ -407,7 +471,9 @@ class FightSim implements EffectHost<FightUnit> {
         continue;
       }
       this.events.push({ tick: this.tick, type: 'projectileHit', uid: p.ownerUid, target: p.targetUid, ref: p.ref });
-      runEffects(this, this.projectileDef(p.ref).effects, owner, target, `projectile:${p.ref}`);
+      runEffects(this, this.projectileDef(p.ref).effects, owner, target, p.cause === 'attack' ? 'attack' : `projectile:${p.ref}`);
+      // A basic attack's onHit belongs to the impact, not to the moment the shot was fired.
+      if (p.cause === 'attack' && owner.alive) this.fireHook(owner, 'onHit', target);
     }
   }
 
@@ -561,6 +627,13 @@ class FightSim implements EffectHost<FightUnit> {
     this.events.push({ tick: this.tick, type: 'attack', uid: u.uid, target: target.uid, manaAfter: u.mana });
     this.fireHook(u, 'onAttack', target);
     if (!u.alive || !target.alive) return;
+    // A ranged unit with a projectile shoots: the damage and its onHit land on impact, which
+    // is `distance / speed` seconds later. Melee units (and ranged units without one) hit now.
+    const shot = u.def.attackProjectile;
+    if (shot !== null) {
+      this.launch(u, target, shot, 'attack');
+      return;
+    }
     this.damage(u, target, 'physical', getStat(u, 'attack'), 'attack');
     if (u.alive) this.fireHook(u, 'onHit', target);
   }
@@ -716,6 +789,13 @@ class FightSim implements EffectHost<FightUnit> {
       }
     }
     this.tick = ticks;
+    // Shots still in the air when the fight ends fizzle: resolving damage after the outcome is
+    // decided would change it, and dropping them silently leaves the renderer holding a shot
+    // that never lands (QUESTIONS.md P0-02-05).
+    for (const p of this.projectiles) {
+      this.events.push({ tick: ticks, type: 'projectileFizzle', uid: p.ownerUid, target: p.targetUid, ref: p.ref });
+    }
+    this.projectiles.length = 0;
     this.events.push({ tick: ticks, type: 'end', winner, reason });
     const survivors = {
       left: this.units.filter((u) => u.alive && u.team === 0).map((u) => u.uid),

@@ -5,10 +5,39 @@
 import type { ModMode, Modifier, StatName } from './stats.ts';
 
 export type DamageKind = 'physical' | 'magic' | 'true';
-export type TargetSel = 'self' | 'target' | 'allies' | 'enemies';
+
+/** The four unit selectors that need no geometry. */
+export type TargetName = 'self' | 'target' | 'allies' | 'enemies';
+export type TargetSel = TargetName | TargetShape;
 
 export const DAMAGE_KINDS = ['physical', 'magic', 'true'] as const;
 export const TARGET_SELS = ['self', 'target', 'allies', 'enemies'] as const;
+export const TARGET_SHAPES = ['radius', 'line', 'nearest'] as const;
+export const TARGET_TEAMS = ['allies', 'enemies', 'all'] as const;
+export const TARGET_ANCHORS = ['self', 'target'] as const;
+
+/** Which side a shape picks up, relative to the unit running the effect. */
+export type TargetTeam = (typeof TARGET_TEAMS)[number];
+/** Where a shape is centred: the unit itself, or its contextual target. */
+export type TargetAnchor = (typeof TARGET_ANCHORS)[number];
+
+/**
+ * A geometric selector on the hex grid. Every shape is anchored at a unit and filtered by
+ * team; results are always ordered by uid, so a shape can never introduce order dependence.
+ *  - `radius`: every unit within `radius` hexes of the anchor (inclusive).
+ *  - `line`: the units standing on the `length` hexes running from the anchor toward the
+ *    contextual target. With no contextual target there is no direction, so nothing is hit.
+ *  - `nearest`: the `k` units closest to the anchor, ties by uid. `allies` and `all` include
+ *    the unit itself (as the plain selectors do), so "nearest 1 ally" is always the caster.
+ */
+export type TargetShape =
+  | { shape: 'radius'; radius: number; from: TargetAnchor; team: TargetTeam }
+  | { shape: 'line'; length: number; from: TargetAnchor; team: TargetTeam }
+  | { shape: 'nearest'; k: number; from: TargetAnchor; team: TargetTeam };
+
+export function isTargetShape(t: TargetSel): t is TargetShape {
+  return typeof t !== 'string';
+}
 export const EFFECT_TYPES = ['damage', 'heal', 'shield', 'statMod', 'stun', 'applyTag', 'spawnProjectile'] as const;
 export const HOOK_NAMES = [
   'onCombatStart',

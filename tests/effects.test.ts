@@ -8,7 +8,7 @@ import { fight, type FightEvent, type FightResult } from '../src/sim/fight.ts';
 import { hexDistance } from '../src/sim/hex.ts';
 import { fightRulesFrom } from '../src/sim/rules.ts';
 import type { BoardUnit } from '../src/sim/units.ts';
-import { devContent, rawDevContent, rulesWithUnits, testUnit } from './helpers.ts';
+import { devBoard, devContent, rawDevContent, rulesWithUnits, testUnit } from './helpers.ts';
 
 /** A mana pool so large that attack/hit mana can never refill it: the unit casts exactly once. */
 const ONE_SHOT_MANA = 100000;
@@ -507,16 +507,19 @@ describe('effect schema rejections', () => {
       (raw.units as { projectiles: unknown[] }).projectiles = list;
       return raw;
     };
+    // The dev units reference both registry entries, so a replacement list must keep both ids.
     const bolt = { id: 'dev.bolt', speed: 8, effects: [{ type: 'damage', kind: 'true', amount: 1, target: 'target' }] };
-    expect(() => loadContent(withProjectiles([bolt, { ...bolt }]))).toThrow(/duplicate projectile id/);
+    const arrow = { id: 'dev.arrow', speed: 12, effects: [{ type: 'damage', kind: 'true', amount: 1, target: 'target' }] };
+    expect(() => loadContent(withProjectiles([bolt, arrow, { ...bolt }]))).toThrow(/duplicate projectile id/);
     expect(() =>
-      loadContent(withProjectiles([bolt, { id: 'p.self', speed: 1, effects: [{ type: 'spawnProjectile', ref: 'p.self', target: 'target' }] }])),
+      loadContent(withProjectiles([bolt, arrow, { id: 'p.self', speed: 1, effects: [{ type: 'spawnProjectile', ref: 'p.self', target: 'target' }] }])),
     ).toThrow(/spawn cycle/);
     // QA bug 1: a 2-cycle used to load and made the fight spawn projectiles without bound.
     expect(() =>
       loadContent(
         withProjectiles([
           bolt,
+          arrow,
           { id: 'p.a', speed: 1, effects: [{ type: 'spawnProjectile', ref: 'p.b', target: 'target' }] },
           { id: 'p.b', speed: 1, effects: [{ type: 'spawnProjectile', ref: 'p.a', target: 'target' }] },
         ]),
@@ -529,13 +532,32 @@ describe('effect schema rejections', () => {
     // on both sides and require the resulting events to name every hook, effect and the aura.
     const content = devContent();
     const board: BoardUnit[] = content.units.map((u, i) => ({ defId: u.id, star: 1, col: i % content.board.cols, row: 4 + Math.floor(i / content.board.cols) }));
-    const res = fight(board, board, 1, fightRulesFrom(content));
+    const rules = fightRulesFrom(content);
     const sources = new Set<string>();
     const types = new Set<string>();
-    for (const e of res.events) {
-      types.add(e.type);
-      if ('cause' in e) sources.add(e.cause);
-      if ('source' in e) sources.add(e.source);
+    // A union over a few matchups and seeds: which unit lands the killing blow in one fight is
+    // an accident of the numbers, and this test is about the vocabulary being reachable at all.
+    // The last two matchups are deliberately lopsided: the units carrying onDeath / onKill
+    // effects never lose (or never land a kill) in a fair fight, so each is set up to.
+    const lastStand: BoardUnit[] = [{ defId: 'dev.titan', star: 1, col: 3, row: 5 }];
+    const execution: BoardUnit[] = [{ defId: 'dev.assassin', star: 3, col: 3, row: 5 }];
+    const prey: BoardUnit[] = [{ defId: 'dev.archer', star: 1, col: 3, row: 5 }];
+    const matchups: [BoardUnit[], BoardUnit[]][] = [
+      [board, board],
+      [devBoard('a'), devBoard('b')],
+      [devBoard('c'), devBoard('b')],
+      [board, devBoard('c')],
+      [lastStand, board],
+      [execution, prey],
+    ];
+    for (const [left, right] of matchups) {
+      for (const seed of [1, 2, 3]) {
+        for (const e of fight(left, right, seed, rules).events) {
+          types.add(e.type);
+          if ('cause' in e) sources.add(e.cause);
+          if ('source' in e) sources.add(e.source);
+        }
+      }
     }
     for (const h of HOOK_NAMES) {
       expect([...sources].some((c) => c.startsWith(`hook:${h}:`)), `hook ${h} never fired in a dev fight`).toBe(true);

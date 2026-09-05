@@ -107,6 +107,10 @@ export function loadContent(raw: RawContentFiles): Content {
     for (const ref of projectileRefs(unitEffects(u))) {
       if (!projectilesById[ref]) throw new ContentError('units', `${u.id}: unknown projectile ref ${ref}`);
     }
+    if (u.attackProjectile !== null) {
+      if (!projectilesById[u.attackProjectile]) throw new ContentError('units', `${u.id}: unknown attackProjectile ${u.attackProjectile}`);
+      if (u.attackType !== 'ranged') throw new ContentError('units', `${u.id}: only a ranged unit can have an attackProjectile`);
+    }
   }
   for (const p of projectiles) {
     for (const ref of projectileRefs(p.effects)) {

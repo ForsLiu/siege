@@ -30,17 +30,56 @@ export interface UnitSnapshot {
   lastAttackTick: number;
 }
 
+/** A shot in flight, for the renderer to draw between its spawn and arrival ticks. */
+export interface ProjectileSnapshot {
+  ref: string;
+  uid: number;
+  target: number;
+  from: Cell;
+  to: Cell;
+  spawnTick: number;
+  arrivalTick: number;
+}
+
 export interface Timeline {
   ticks: number;
   /** frames[t] = snapshot of every unit after tick t was processed. */
   frames: UnitSnapshot[][];
+  /** shots[t] = projectiles in flight during tick t (spawnTick <= t < arrivalTick). */
+  shots: ProjectileSnapshot[][];
   winner: FightResult['winner'];
+}
+
+/** Position of a shot at fractional tick `t`, in (fractional) board cells. */
+export function projectilePosition(p: ProjectileSnapshot, t: number): { col: number; row: number } {
+  const span = p.arrivalTick - p.spawnTick;
+  const f = span <= 0 ? 1 : Math.min(1, Math.max(0, (t - p.spawnTick) / span));
+  return { col: p.from.col + (p.to.col - p.from.col) * f, row: p.from.row + (p.to.row - p.from.row) * f };
 }
 
 export function buildTimeline(result: FightResult, moveTicks: number): Timeline {
   const units = new Map<number, UnitSnapshot>();
   const frames: UnitSnapshot[][] = [];
   const events = result.events;
+  // Every shot, read straight off the event log: spawn gives the endpoints and the arrival
+  // tick, so the in-flight sets are one pass over the shots rather than a filter per tick.
+  // Cells are copied, so the renderer never holds a reference into the fight result.
+  const shots: ProjectileSnapshot[][] = Array.from({ length: result.ticks + 1 }, () => []);
+  for (const e of events) {
+    if (e.type !== 'projectile') continue;
+    const shot: ProjectileSnapshot = {
+      ref: e.ref,
+      uid: e.uid,
+      target: e.target,
+      from: { ...e.from },
+      to: { ...e.to },
+      spawnTick: e.tick,
+      arrivalTick: e.arrivalTick,
+    };
+    // A shot that never arrives (the fight ended first) leaves the air at the end of the fight.
+    const until = Math.min(e.arrivalTick, result.ticks);
+    for (let t = Math.max(0, e.tick); t < until; t++) (shots[t] as ProjectileSnapshot[]).push(shot);
+  }
   let i = 0;
   const snapshot = (): UnitSnapshot[] => [...units.values()].map((u) => ({ ...u }));
   // frames.length === ticks + 1: one frame per processed tick plus the final frame.
@@ -56,7 +95,7 @@ export function buildTimeline(result: FightResult, moveTicks: number): Timeline 
     i++;
   }
   frames.push(snapshot());
-  return { ticks: result.ticks, frames, winner: result.winner };
+  return { ticks: result.ticks, frames, shots, winner: result.winner };
 }
 
 function apply(units: Map<number, UnitSnapshot>, e: FightEvent, _moveTicks: number): void {

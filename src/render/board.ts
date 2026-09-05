@@ -1,6 +1,6 @@
 // Canvas 2D renderer for the hex board. Reads sim state / timeline snapshots; never mutates them.
-import type { UnitSnapshot } from './timeline.ts';
-import { interpolatedCell } from './timeline.ts';
+import type { ProjectileSnapshot, UnitSnapshot } from './timeline.ts';
+import { interpolatedCell, projectilePosition } from './timeline.ts';
 import type { BoardConfig, Cell } from '../sim/hex.ts';
 import { mirrorCell } from '../sim/hex.ts';
 import type { Content } from '../sim/rules.ts';
@@ -19,6 +19,8 @@ export interface PlanningView {
 
 export interface FightView {
   frame: UnitSnapshot[];
+  /** Projectiles in flight this tick; drawn interpolated between their endpoints. */
+  shots?: ProjectileSnapshot[];
   /** Fractional tick for interpolation. */
   tick: number;
   moveTicks: number;
@@ -40,6 +42,7 @@ const COLORS = {
   manaBg: '#1e2a3a',
   text: '#e5e7eb',
   stun: '#facc15',
+  shot: '#fcd34d',
 };
 
 export class BoardRenderer {
@@ -137,6 +140,27 @@ export class BoardRenderer {
         ctx.stroke();
       }
     }
+  }
+
+  /** Projectiles in flight, drawn as a small dot travelling from shooter to target. */
+  private drawShots(view: FightView): void {
+    const shots = view.shots ?? [];
+    if (shots.length === 0) return;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.fillStyle = COLORS.shot;
+    for (const p of shots) {
+      // Follow a target that is still moving, so a shot lands on the unit and not on the cell
+      // it stood in when the shot was fired.
+      const target = view.frame.find((u) => u.uid === p.target && u.alive);
+      const to = target ? interpolatedCell(target, view.tick, view.moveTicks) : p.to;
+      const at = projectilePosition({ ...p, to: { col: Math.round(to.col), row: Math.round(to.row) } }, view.tick);
+      const c = this.cellCenter(at.col, at.row);
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, Math.max(2, this.size * 0.12), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   private drawUnit(x: number, y: number, opts: { team: 0 | 1; label: string; star: number; hp: number; maxHp: number; mana: number; maxMana: number; selected: boolean; flash: boolean; stunned: boolean; alpha: number }): void {
@@ -239,6 +263,7 @@ export class BoardRenderer {
 
   drawFight(view: FightView): void {
     this.drawGrid(null);
+    this.drawShots(view);
     const sorted = [...view.frame].sort((a, b) => a.row - b.row || a.uid - b.uid);
     for (const u of sorted) {
       if (!u.alive) continue;

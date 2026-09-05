@@ -15,7 +15,7 @@
       "hooks": {}
     },
     {
-      "id": "dev.archer", "name": "Dev Archer", "cost": 1, "attackType": "ranged", "tags": ["dev"],
+      "id": "dev.archer", "name": "Dev Archer", "cost": 1, "attackType": "ranged", "tags": ["dev"], "attackProjectile": "dev.arrow",
       "stats": [
         { "hp": 400, "attack": 45, "attackSpeed": 0.75, "armor": 15, "magicResist": 15, "range": 4, "maxMana": 50, "startMana": 0, "abilityPower": 100 },
         { "hp": 720, "attack": 81, "attackSpeed": 0.75, "armor": 15, "magicResist": 15, "range": 4, "maxMana": 50, "startMana": 0, "abilityPower": 100 },
@@ -34,7 +34,7 @@
         { "hp": 1458, "attack": 130, "attackSpeed": 0.65, "armor": 15, "magicResist": 20, "range": 3, "maxMana": 70, "startMana": 20, "abilityPower": 100 }
       ],
       "ability": { "name": "Dev Blast", "effects": [
-        { "type": "damage", "kind": "magic", "amount": 200, "scaling": { "stat": "abilityPower", "factor": 1 }, "target": "enemies" }
+        { "type": "damage", "kind": "magic", "amount": 200, "scaling": { "stat": "abilityPower", "factor": 1 }, "target": { "shape": "nearest", "k": 2, "from": "self", "team": "enemies" } }
       ] },
       "hooks": {}
     },
@@ -84,7 +84,7 @@
         { "hp": 3078, "attack": 259, "attackSpeed": 0.75, "armor": 50, "magicResist": 40, "range": 1, "maxMana": 90, "startMana": 40, "abilityPower": 100 }
       ],
       "ability": { "name": "Dev Cleave", "effects": [
-        { "type": "damage", "kind": "physical", "amount": 150, "scaling": { "stat": "attack", "factor": 2 }, "target": "enemies" }
+        { "type": "damage", "kind": "physical", "amount": 150, "scaling": { "stat": "attack", "factor": 2 }, "target": { "shape": "line", "length": 3, "from": "self", "team": "enemies" } }
       ] },
       "hooks": { "onHit": [ { "type": "heal", "amount": 10, "target": "self" } ] }
     },
@@ -96,8 +96,8 @@
         { "hp": 4536, "attack": 356, "attackSpeed": 0.8, "armor": 60, "magicResist": 60, "range": 1, "maxMana": 100, "startMana": 50, "abilityPower": 100 }
       ],
       "ability": { "name": "Dev Quake", "effects": [
-        { "type": "damage", "kind": "magic", "amount": 300, "scaling": { "stat": "abilityPower", "factor": 2 }, "target": "enemies" },
-        { "type": "stun", "duration": 1.5, "target": "enemies" }
+        { "type": "damage", "kind": "magic", "amount": 300, "scaling": { "stat": "abilityPower", "factor": 2 }, "target": { "shape": "radius", "radius": 2, "from": "self", "team": "enemies" } },
+        { "type": "stun", "duration": 1.5, "target": { "shape": "radius", "radius": 2, "from": "self", "team": "enemies" } }
       ] },
       "hooks": { "onDeath": [ { "type": "damage", "kind": "true", "amount": 200, "target": "enemies" } ] }
     },
@@ -122,7 +122,7 @@
       ] }
     },
     {
-      "id": "dev.arbalest", "name": "Dev Arbalest", "cost": 5, "attackType": "ranged", "tags": ["dev"],
+      "id": "dev.arbalest", "name": "Dev Arbalest", "cost": 5, "attackType": "ranged", "tags": ["dev"], "attackProjectile": "dev.arrow",
       "stats": [
         { "hp": 500, "attack": 55, "attackSpeed": 0.7, "armor": 15, "magicResist": 15, "range": 5, "maxMana": 60, "startMana": 20, "abilityPower": 100 },
         { "hp": 900, "attack": 99, "attackSpeed": 0.7, "armor": 15, "magicResist": 15, "range": 5, "maxMana": 60, "startMana": 20, "abilityPower": 100 },
@@ -139,6 +139,12 @@
     }
   ],
   "projectiles": [
+    {
+      "id": "dev.arrow", "speed": 12,
+      "effects": [
+        { "type": "damage", "kind": "physical", "amount": 0, "scaling": { "stat": "attack", "factor": 1 }, "target": "target" }
+      ]
+    },
     {
       "id": "dev.bolt", "speed": 8,
       "effects": [

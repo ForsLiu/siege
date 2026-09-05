@@ -52,6 +52,7 @@ export function testUnit(id: string, stats: Partial<StatBlock>, extra: Partial<U
     ability: null,
     hooks: {},
     aura: null,
+    attackProjectile: null,
     ...extra,
   };
 }

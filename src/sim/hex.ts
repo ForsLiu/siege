@@ -204,3 +204,80 @@ export function floodDistances(board: BoardConfig, start: Cell, blocked: (idx: n
   }
   return dist;
 }
+
+/**
+ * The `length` cells of the straight hex line leaving `from` through `to`, and on past it in
+ * the same direction. Points are interpolated in cube coordinates as exact rationals over the
+ * hex distance and rounded to the nearest cell (integer math only, no trig, no floats in the
+ * decision), so consecutive cells are adjacent and `hexDistance(line[i], line[j]) === |i - j|`:
+ * the line is straight, not merely a shortest path. The walk stops at the board edge.
+ *
+ * Where the segment passes exactly between two hexes the choice is a fixed tie-break, so the
+ * result is not symmetric under point reflection by construction; callers that need the
+ * mirrored line (team 1) mirror the endpoints and mirror the result back.
+ */
+export function hexLine(from: Cell, to: Cell, length: number, board: BoardConfig): Cell[] {
+  const out: Cell[] = [];
+  if (length <= 0 || sameCell(from, to)) return out;
+  const a = cubeOf(from);
+  const b = cubeOf(to);
+  const n = hexDistance(from, to);
+  const d: Cube = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+  let prev = from;
+  for (let i = 1; out.length < length; i++) {
+    // Guard against a rounding wobble that never advances: the line can only need one extra
+    // step per output cell, so twice the requested length plus the run-up is always enough.
+    if (i > 2 * length + n + 2) break;
+    // Where the segment runs exactly between two hexes the tie-break can land outside the
+    // board while the other candidate is inside; a line along the edge must not die on that.
+    let cell = offsetOfCube(roundCube(a, d, i, n, false));
+    if (!inBounds(cell, board)) cell = offsetOfCube(roundCube(a, d, i, n, true));
+    if (!inBounds(cell, board)) break;
+    if (sameCell(cell, prev) || sameCell(cell, from)) continue;
+    out.push(cell);
+    prev = cell;
+  }
+  return out;
+}
+
+interface Cube {
+  x: number;
+  y: number;
+  z: number;
+}
+
+function cubeOf(c: Cell): Cube {
+  const a = offsetToAxial(c);
+  return { x: a.q, y: -a.q - a.r, z: a.r };
+}
+
+function offsetOfCube(c: Cube): Cell {
+  return axialToOffset({ q: c.x, r: c.z });
+}
+
+/** Round p/q to the nearest integer; `down` sends exact halves the other way. Exact; q > 0. */
+function roundDiv(p: number, q: number, down: boolean): number {
+  return Math.floor((2 * p + q - (down ? 1 : 0)) / (2 * q));
+}
+
+/**
+ * `a + d * (i / n)` rounded to a cube cell: each coordinate is rounded, then the one that moved
+ * furthest is recomputed from the other two so the coordinates still sum to zero.
+ */
+function roundCube(a: Cube, d: Cube, i: number, n: number, halvesDown: boolean): Cube {
+  const xn = a.x * n + d.x * i;
+  const yn = a.y * n + d.y * i;
+  const zn = a.z * n + d.z * i;
+  let x = roundDiv(xn, n, halvesDown);
+  let y = roundDiv(yn, n, halvesDown);
+  let z = roundDiv(zn, n, halvesDown);
+  if (x + y + z === 0) return { x, y, z };
+  // Compare the rounding errors as integers over the common denominator n.
+  const dx = Math.abs(x * n - xn);
+  const dy = Math.abs(y * n - yn);
+  const dz = Math.abs(z * n - zn);
+  if (dx > dy && dx > dz) x = -y - z;
+  else if (dy > dz) y = -x - z;
+  else z = -x - y;
+  return { x, y, z };
+}

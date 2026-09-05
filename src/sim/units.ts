@@ -23,6 +23,11 @@ export interface UnitDef {
   hooks: Hooks;
   /** Continuous passive applied to units within range each tick; null = none. */
   aura: AuraDef | null;
+  /**
+   * Projectile id fired by this unit's basic attack; null = the hit lands instantly.
+   * Only `ranged` units may set it (enforced by the content loader).
+   */
+  attackProjectile: string | null;
   // Extension points reserved for SPEC content (traits, items, augments) are added to
   // the schema and here together when SPEC.md defines them.
 }
