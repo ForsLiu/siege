@@ -40,17 +40,23 @@ describe('screen state machine', () => {
     expect(reduceScreen(d, { type: 'toTitle' }).screen).toBe('title');
   });
 
-  it('every (screen, event) pair either matches LEGAL_TRANSITIONS or leaves the state untouched', () => {
+  it('every (screen, paused, event) triple either matches LEGAL_TRANSITIONS or leaves the state untouched', () => {
     for (const screen of SCREENS) {
-      for (const type of SCREEN_EVENT_TYPES) {
-        const before = at(screen, type === 'resume');
-        const after = reduceScreen(before, event(type));
-        const legal = LEGAL_TRANSITIONS.find((t) => t.from === screen && t.event === type);
-        if (legal) {
-          expect(after.screen, `${screen} + ${type}`).toBe(legal.to);
-          expect(after, `${screen} + ${type} must produce a new state`).not.toBe(before);
-        } else {
-          expect(after, `${screen} + ${type} must be a no-op`).toBe(before);
+      for (const paused of [false, true]) {
+        for (const type of SCREEN_EVENT_TYPES) {
+          const before = at(screen, paused);
+          const after = reduceScreen(before, event(type));
+          const legal = LEGAL_TRANSITIONS.find((t) => t.from === screen && t.event === type);
+          const where = `${screen}${paused ? ' (paused)' : ''} + ${type}`;
+          // `resume` is the one transition whose legality depends on `paused`.
+          if (legal && !(type === 'resume' && !paused)) {
+            expect(after.screen, where).toBe(legal.to);
+            expect(after, `${where} must produce a new state`).not.toBe(before);
+            if (type === 'resume' || type === 'togglePause') expect(after.paused, where).toBe(type === 'togglePause' ? !paused : false);
+            else expect(after.paused, `${where} leaves the run unpaused`).toBe(false);
+          } else {
+            expect(after, `${where} must be a no-op`).toBe(before);
+          }
         }
       }
     }

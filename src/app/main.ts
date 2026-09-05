@@ -1,17 +1,23 @@
-// App glue: content -> sim run -> renderer/UI, screen state machine, input mapping, game loop.
+// App glue: content -> RunController -> renderer/UI, screen state machine, input mapping, loop.
 // The sim is driven exclusively through Commands; rendering reads state and fight events.
+// Everything testable lives next door: runController.ts (dispatch/playback/abandon),
+// drag.ts (drop rules), hotkeys.ts (key mapping), screens.ts (screen machine).
 import './style.css';
 import { DEV_BOARD_NAMES, devBoardUnits, loadBrowserContent } from '../data/browser.ts';
 import { BoardRenderer } from '../render/board.ts';
-import { buildTimeline, type Timeline, type UnitSnapshot } from '../render/timeline.ts';
-import { applyCommand, type Command } from '../sim/commands.ts';
+import type { UnitSnapshot } from '../render/timeline.ts';
+import type { Command } from '../sim/commands.ts';
 import { fight, type FightResult } from '../sim/fight.ts';
 import type { Cell } from '../sim/hex.ts';
 import { isPlayerCell } from '../sim/hex.ts';
 import { fightRulesFrom } from '../sim/rules.ts';
-import { boardUnitAt, createRun, currentEncounter, findUnit, shopTierCount, type RunState } from '../sim/run.ts';
+import { boardUnitAt, currentEncounter, shopTierCount } from '../sim/run.ts';
 import { createPauseScreen, createResultsScreen, createTitleScreen } from '../ui/screens.ts';
-import { createRunUi, type RunUiMode } from '../ui/runUi.ts';
+import { createRunUi } from '../ui/runUi.ts';
+import { canDrag, dropOutcome, type DropOutcome } from './drag.ts';
+import { hotkeyAction, isViewAction } from './hotkeys.ts';
+import { boardClick, boardDrop, type PointerOutcome } from './pointer.ts';
+import { RunController, type PlaybackState } from './runController.ts';
 import { initialScreen, reduceScreen, type ScreenEvent, type ScreenState } from './screens.ts';
 import type { DevOverlay } from '../dev/overlay.ts';
 import type { DevPanel } from '../dev/panel.ts';
@@ -24,27 +30,19 @@ const tickRate = content.rules.tickRate;
 const moveTicks = Math.max(1, Math.round(content.rules.combat.moveSecondsPerHex * tickRate));
 const devBoardNames = DEV_BOARD_NAMES;
 
-interface Playback {
-  timeline: Timeline;
-  tick: number;
-  done: boolean;
-  onDone: () => void;
-}
-
 let screen: ScreenState = initialScreen();
-let run: RunState | null = null;
-let runSeed = 0;
-let selectedUid: number | null = null;
 let hover: Cell | null = null;
 let speed = 1;
-let playback: Playback | null = null;
-let message = '';
 let overlay: DevOverlay | null = null;
 let devPanel: DevPanel | null = null;
 let fps = 0;
 let devFightResult: FightResult | null = null;
 /** Final frame of the last dev fight, kept so the idle screen does not rebuild the timeline per frame. */
 let devFightFinalFrame: UnitSnapshot[] = [];
+/** Unit being dragged with the mouse, the cell it is over, and whether that drop is legal. */
+let drag: { uid: number; moved: boolean; cell: Cell | null; drop: DropOutcome | null } | null = null;
+/** Set when a drag consumed the gesture, so the trailing `click` does not act on it too. */
+let suppressClick = false;
 
 // ---- screens ----
 function emit(ev: ScreenEvent): void {
@@ -54,9 +52,21 @@ function emit(ev: ScreenEvent): void {
   syncScreens();
 }
 
+const controller = new RunController({
+  content,
+  // Dev builds accept the `dev:` command namespace (P0-15); `vite build` defines the flag false.
+  devCommands: __SIEGE_DEV__,
+  onScreenEvent: emit,
+  onChange: () => refreshUi(),
+});
+
+function dispatch(cmd: Command): { ok: boolean; reason: string | null } {
+  return controller.dispatch(cmd);
+}
+
 const title = createTitleScreen(app, devBoardNames, content.contentHash, {
   onStartRun(seed) {
-    startRun(seed);
+    controller.startRun(seed);
   },
   onDevFight(left, right, seed) {
     startDevFight(left, right, seed);
@@ -67,7 +77,7 @@ const results = createResultsScreen(app, {
     emit({ type: 'toTitle' });
   },
   onAgain() {
-    startRun(Math.floor(Math.random() * 0xffffffff));
+    controller.startRun(Math.floor(Math.random() * 0xffffffff));
   },
 });
 const pause = createPauseScreen(app, {
@@ -75,11 +85,9 @@ const pause = createPauseScreen(app, {
     emit({ type: 'resume' });
   },
   onAbandon() {
-    if (screen.screen === 'run' && run) {
-      // Abandoning mid-fight: the fight is already resolved in the sim; drop the playback.
-      playback = null;
+    if (screen.screen === 'run' && controller.run) {
       emit({ type: 'resume' });
-      dispatch({ type: 'abandon' });
+      controller.abandon();
     } else {
       emit({ type: 'toTitle' });
     }
@@ -102,8 +110,11 @@ const runUi = createRunUi(app, {
     dispatch(cmd);
   },
   onSelect(uid) {
-    selectedUid = uid;
+    controller.selectedUid = uid;
     refreshUi();
+  },
+  onDragStart(uid) {
+    startDrag(uid);
   },
   onSpeed(s) {
     speed = s;
@@ -115,7 +126,9 @@ const runUi = createRunUi(app, {
 });
 
 function syncScreens(): void {
-  if (screen.screen === 'title') playback = null;
+  const run = controller.run;
+  drag = null;
+  if (screen.screen === 'title') controller.clear();
   title.root.hidden = screen.screen !== 'title';
   runUi.root.hidden = screen.screen !== 'run';
   devBar.hidden = screen.screen !== 'devFight';
@@ -139,127 +152,115 @@ function syncScreens(): void {
   refreshUi();
 }
 
-// ---- run control ----
-function startRun(seed: number): void {
-  // Dev builds accept the `dev:` command namespace (P0-15); `vite build` defines the flag false.
-  run = createRun(seed, content, { devCommands: __SIEGE_DEV__ });
-  runSeed = seed;
-  selectedUid = null;
-  playback = null;
-  message = '';
-  emit({ type: 'startRun' });
-  refreshUi();
-}
-
-/** The single command path: UI clicks, hotkeys and the dev panel all go through here. */
-function dispatch(cmd: Command): { ok: boolean; reason: string | null } {
-  if (!run) {
-    message = 'no run in progress';
-    refreshUi();
-    return { ok: false, reason: message };
-  }
-  if (playback) {
-    message = 'combat is playing';
-    refreshUi();
-    return { ok: false, reason: message };
-  }
-  const res = applyCommand(run, cmd, content);
-  if (!res.ok) {
-    message = res.reason;
-    refreshUi();
-    return { ok: false, reason: res.reason };
-  }
-  message = '';
-  if (selectedUid !== null && !findUnit(run, selectedUid)) selectedUid = null;
-  if (res.fight) {
-    const fightResult = res.fight;
-    startPlayback(fightResult, () => {
-      const r = run;
-      if (!r) return;
-      const f = r.lastFight;
-      message = f ? `${f.winner === 'left' ? 'Victory' : f.winner === 'right' ? 'Defeat' : 'Draw'} in ${(f.ticks / tickRate).toFixed(1)}s (-${f.hpLoss} hp)` : '';
-      if (r.phase === 'ended') finishRun();
-      else refreshUi();
-    });
-  } else if (run.phase === 'ended') {
-    finishRun();
-  }
-  refreshUi();
-  return { ok: true, reason: null };
-}
-
-function finishRun(): void {
-  if (!run) return;
-  emit({ type: 'runEnded', outcome: run.outcome ?? 'loss' });
-}
-
-function startPlayback(result: FightResult, onDone: () => void): void {
-  playback = { timeline: buildTimeline(result, moveTicks), tick: 0, done: false, onDone };
-}
-
 function startDevFight(left: string, right: string, seed: number): void {
   const l = devBoardUnits(left, content);
   const r = devBoardUnits(right, content);
   devFightResult = fight(l, r, seed, fightRulesFrom(content));
-  runSeed = seed;
+  controller.seed = seed;
   devBarText.textContent = `Dev fight ${left} vs ${right} · seed ${seed} · playing...`;
   const result = devFightResult;
-  startPlayback(result, () => {
+  controller.startPlayback(result, () => {
     devBarText.textContent = `Dev fight ${left} vs ${right} · seed ${seed} · ${result.winner} (${result.reason}) in ${result.ticks} ticks · hash ${result.hash}`;
   });
-  devFightFinalFrame = playback ? (playback.timeline.frames[playback.timeline.frames.length - 1] ?? []) : [];
+  const play = controller.playback;
+  devFightFinalFrame = play ? (play.timeline.frames[play.timeline.frames.length - 1] ?? []) : [];
   emit({ type: 'startDevFight' });
 }
 
-function uiMode(): RunUiMode {
-  if (playback) return 'combat';
-  if (run?.phase === 'reward') return 'reward';
-  return 'planning';
-}
-
 function refreshUi(): void {
-  if (screen.screen === 'run' && run) runUi.update({ state: run, content, mode: uiMode(), selectedUid, speed, message });
+  const run = controller.run;
+  if (screen.screen === 'run' && run) {
+    runUi.update({ state: run, content, mode: controller.mode(), selectedUid: controller.selectedUid, speed, message: controller.message });
+  }
   devPanel?.update({
-    seed: screen.screen === 'title' ? null : runSeed,
+    seed: screen.screen === 'title' ? null : controller.seed,
     contentHash: content.contentHash,
     round: run?.round ?? null,
     phase: run?.phase ?? null,
     gold: run?.gold ?? null,
     invinciblePieces: run?.dev.invinciblePieces ?? false,
     invinciblePlayer: run?.dev.invinciblePlayer ?? false,
-    message,
+    message: controller.message,
   });
 }
 
 // ---- input ----
-canvas.addEventListener('mousemove', (e) => {
+function cellFromEvent(e: MouseEvent): Cell | null {
   const rect = canvas.getBoundingClientRect();
-  hover = renderer.cellAt(e.clientX - rect.left, e.clientY - rect.top);
+  return renderer.cellAt(e.clientX - rect.left, e.clientY - rect.top);
+}
+
+/**
+ * Pick a unit up (from the board or a bench card). The selection is left alone: a press that
+ * never moves is a click, and the click handler owns it. Drops are resolved on mouseup.
+ */
+function startDrag(uid: number): void {
+  const run = controller.run;
+  if (!dragAllowed() || !run || !canDrag(run, uid)) return;
+  drag = { uid, moved: false, cell: null, drop: null };
+}
+
+function dragAllowed(): boolean {
+  return screen.screen === 'run' && controller.run !== null && !controller.playback && !screen.paused;
+}
+
+function apply(outcome: PointerOutcome): void {
+  if (outcome.command) dispatch(outcome.command);
+  else if (outcome.reason) controller.message = outcome.reason;
+  if (outcome.select !== 'keep') controller.selectedUid = outcome.select;
+  refreshUi();
+}
+
+function endDrag(cell: Cell | null): void {
+  const d = drag;
+  drag = null;
+  const run = controller.run;
+  if (!d || !run) return;
+  if (!d.moved) return; // a click, not a drag: the click handler decides
+  suppressClick = true;
+  if (!dragAllowed()) return;
+  apply(boardDrop(run, d.uid, cell, content));
+}
+
+canvas.addEventListener('mousemove', (e) => {
+  hover = cellFromEvent(e);
+  const run = controller.run;
+  if (drag && run) {
+    drag.moved = true;
+    drag.cell = hover;
+    drag.drop = dropOutcome(run, drag.uid, hover, content);
+  }
 });
 canvas.addEventListener('mouseleave', () => {
   hover = null;
+  if (drag) {
+    drag.cell = null;
+    drag.drop = null;
+  }
+});
+canvas.addEventListener('mousedown', (e) => {
+  const run = controller.run;
+  if (!dragAllowed() || !run) return;
+  const cell = cellFromEvent(e);
+  if (!cell) return;
+  const occupant = boardUnitAt(run, cell.col, cell.row);
+  if (occupant) startDrag(occupant.uid);
+});
+window.addEventListener('mouseup', (e) => {
+  if (!drag) return;
+  const target = e.target === canvas ? cellFromEvent(e) : null;
+  endDrag(target);
 });
 canvas.addEventListener('click', (e) => {
-  if (screen.screen !== 'run' || !run || playback || screen.paused || run.phase !== 'planning') return;
-  const rect = canvas.getBoundingClientRect();
-  const cell = renderer.cellAt(e.clientX - rect.left, e.clientY - rect.top);
-  if (!cell || !isPlayerCell(cell, content.board)) return;
-  const occupant = boardUnitAt(run, cell.col, cell.row);
-  if (occupant) {
-    if (selectedUid === occupant.uid) {
-      dispatch({ type: 'bench', uid: occupant.uid });
-      selectedUid = null;
-    } else if (selectedUid !== null) {
-      dispatch({ type: 'swap', uidA: selectedUid, uidB: occupant.uid });
-      selectedUid = null;
-    } else {
-      selectedUid = occupant.uid;
-    }
-  } else if (selectedUid !== null) {
-    dispatch({ type: 'place', uid: selectedUid, col: cell.col, row: cell.row });
-    if (run.board.some((u) => u.uid === selectedUid)) selectedUid = null;
+  if (suppressClick) {
+    suppressClick = false;
+    return;
   }
-  refreshUi();
+  const run = controller.run;
+  if (screen.screen !== 'run' || !run || controller.playback || screen.paused) return;
+  const cell = cellFromEvent(e);
+  if (!cell || !isPlayerCell(cell, content.board)) return;
+  apply(boardClick(run, controller.selectedUid, cell, content));
 });
 
 window.addEventListener('keydown', (e) => {
@@ -274,43 +275,36 @@ window.addEventListener('keydown', (e) => {
     refreshUi();
     return;
   }
-  if (e.key === 'Escape') {
-    emit({ type: 'togglePause' });
-    return;
-  }
-  if (screen.screen !== 'run' || !run || screen.paused || playback) return;
+  // Text inputs and the dev panel's own controls keep their keys (a focused panel button would
+  // otherwise re-fire on Space while Space also starts combat).
   if (e.target instanceof HTMLInputElement) return;
-  // Keys typed into the dev panel's own controls stay there (a focused button would otherwise
-  // re-fire on Space while Space also starts combat).
   if (devPanel && e.target instanceof Node && devPanel.root.contains(e.target)) return;
-  switch (e.key) {
-    case 'r':
-    case 'R':
+  const action = hotkeyAction(e.key);
+  if (!action) return;
+  // Speed and pause are view-only: they work while paused and during combat playback.
+  if (!isViewAction(action) && (screen.screen !== 'run' || !controller.run || screen.paused || controller.playback)) return;
+  const run = controller.run;
+  switch (action.type) {
+    case 'reroll':
       dispatch({ type: 'reroll' });
       break;
-    case 'x':
-    case 'X':
+    case 'levelUp':
       dispatch({ type: 'levelUp' });
       break;
-    case 's':
-    case 'S':
-      if (selectedUid !== null) dispatch({ type: 'sell', uid: selectedUid });
+    case 'sellSelected':
+      if (controller.selectedUid !== null) dispatch({ type: 'sell', uid: controller.selectedUid });
       break;
-    case ' ':
+    case 'startOrNext':
       e.preventDefault();
-      dispatch(run.phase === 'reward' ? { type: 'nextRound' } : { type: 'startCombat' });
+      if (run) dispatch(run.phase === 'reward' ? { type: 'nextRound' } : { type: 'startCombat' });
       break;
-    case '1':
-      speed = 1;
+    case 'speed':
+      speed = action.speed;
       refreshUi();
       break;
-    case '2':
-      speed = 2;
-      refreshUi();
-      break;
-    case '3':
-      speed = 4;
-      refreshUi();
+    case 'pause':
+      e.preventDefault();
+      emit({ type: 'togglePause' });
       break;
     default:
       break;
@@ -334,22 +328,22 @@ function frame(ts: number): void {
     fpsFrames = 0;
   }
 
-  if (playback && !playback.done && !screen.paused) {
-    playback.tick += dt * tickRate * speed;
-    if (playback.tick >= playback.timeline.ticks + tickRate * 0.5) {
-      playback.done = true;
-      const done = playback.onDone;
-      playback = null;
-      done();
-      refreshUi();
-    }
-  }
+  if (!screen.paused) controller.advance(dt, speed);
+  const playback = controller.playback;
+  const run = controller.run;
 
   if (screen.screen === 'run' && run) {
     if (playback) drawPlayback(playback);
     else {
       const enc = currentEncounter(run, content);
-      renderer.drawPlanning({ units: run.board, enemy: enc ? enc.board : [], selectedUid, hover, content });
+      renderer.drawPlanning({
+        units: run.board,
+        enemy: enc ? enc.board : [],
+        selectedUid: controller.selectedUid,
+        hover,
+        content,
+        drop: drag?.drop ? { cell: drag.cell, valid: drag.drop.valid } : null,
+      });
     }
   } else if (screen.screen === 'devFight') {
     if (playback) drawPlayback(playback);
@@ -365,14 +359,14 @@ function frame(ts: number): void {
     round: run?.round ?? null,
     roundHash: run ? (run.hashes[run.hashes.length - 1] ?? null) : null,
     contentHash: content.contentHash,
-    seed: screen.screen === 'title' ? null : runSeed,
+    seed: screen.screen === 'title' ? null : controller.seed,
     speed,
     extra: run ? `phase ${run.phase}  gold ${run.gold}  hp ${run.hp}  cmds ${run.commandCount}` : '',
   });
   requestAnimationFrame(frame);
 }
 
-function drawPlayback(p: Playback): void {
+function drawPlayback(p: PlaybackState): void {
   const idx = Math.min(p.timeline.frames.length - 1, Math.max(0, Math.floor(p.tick)));
   renderer.drawFight({ frame: p.timeline.frames[idx] ?? [], tick: p.tick, moveTicks, content });
 }

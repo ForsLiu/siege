@@ -18,6 +18,8 @@ export interface RunUiView {
 export interface RunUiCallbacks {
   onCommand(cmd: Command): void;
   onSelect(uid: number | null): void;
+  /** Mouse-down on a bench card: the app picks the unit up and resolves the drop on the board. */
+  onDragStart(uid: number): void;
   onSpeed(speed: number): void;
   onPause(): void;
 }
@@ -130,6 +132,7 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
         card.classList.toggle('selected', view.selectedUid === unit.uid);
         card.disabled = !planning;
         card.addEventListener('click', () => cb.onSelect(view.selectedUid === unit.uid ? null : unit.uid));
+        card.addEventListener('mousedown', () => cb.onDragStart(unit.uid));
       } else {
         card.classList.add('empty');
         card.disabled = true;

@@ -29,6 +29,8 @@ Environment: `SIEGE_TEST_WORKERS` (vitest workers, default 4) and `SIEGE_SWEEP_W
 
 - **Title**: enter a seed (blank = random) → **New run**. **Dev fight** plays two dev boards through the same `fight()` the headless tools use.
 - **Run**: shop row (click to buy), bench row (click to select), board (click a player-half cell to place the selected unit; click a board unit to select it; click the selected board unit again to bench it; click another unit while one is selected to swap). Buttons: Reroll, Buy XP, Sell, Start combat / Next round, speed 1×/2×/4×, Pause.
+- Placement: click a unit to select it, click an empty hex to place it, click it again to bench it, or **drag** it (from the board or from a bench card) onto a hex — the hex under the cursor rings green when the drop is legal and red when it is not, with the sim's reason in the HUD.
+- The play area is a 16:9 box centred in the window (letterboxed at other aspect ratios), so the board scales with the window without changing its layout.
 - Hotkeys: `R` reroll · `X` buy xp · `S` sell selected · `Space` start combat / next round · `1` `2` `3` speed 1×/2×/4× · `Esc` pause · `F1` dev overlay (fps, tick, round hash, content hash, seed) · `F2` dev panel (a button per `dev:` cheat, plus the seed and content hash to quote in a bug report).
 - **Results** after victory (survive the last encounter) or defeat (hp 0 / abandon) → back to Title.
 
