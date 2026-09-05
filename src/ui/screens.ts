@@ -1,4 +1,5 @@
 // Title, Results and Pause overlays (DOM). Thin bindings over src/app/screens.ts events.
+import { HOTKEY_HELP } from '../app/hotkeys.ts';
 
 export interface TitleCallbacks {
   onStartRun(seed: number): void;
@@ -50,7 +51,7 @@ export function createTitleScreen(parent: HTMLElement, devBoards: readonly strin
   btnDev.addEventListener('click', () => cb.onDevFight(selLeft.value, selRight.value, seedFrom(seedInput)));
   devRow.append(el('label', 'label', 'Dev fight'), selLeft, el('span', 'label', 'vs'), selRight, btnDev);
 
-  root.append(seedRow, btnRun, devRow, el('p', 'footnote', `content ${contentHash.slice(0, 16)} · Esc pause · F1 dev overlay`));
+  root.append(seedRow, btnRun, devRow, el('p', 'footnote', `content ${contentHash.slice(0, 16)} · Esc pause · F1 dev overlay · F2 dev panel`));
   parent.appendChild(root);
   return {
     root,
@@ -123,7 +124,9 @@ export function createPauseScreen(parent: HTMLElement, cb: { onResume(): void; o
   const btnAbandon = el('button', 'btn btn-large', 'Abandon run');
   btnResume.addEventListener('click', () => cb.onResume());
   btnAbandon.addEventListener('click', () => cb.onAbandon());
-  root.append(el('h1', 'title', 'PAUSED'), btnResume, btnAbandon);
+  // The key list comes from the same table the app binds, so the two cannot drift.
+  const keys = el('p', 'footnote', HOTKEY_HELP.map((h) => `${h.keys} ${h.what}`).join(' · '));
+  root.append(el('h1', 'title', 'PAUSED'), btnResume, btnAbandon, keys);
   parent.appendChild(root);
   return {
     root,

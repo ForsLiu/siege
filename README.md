@@ -12,7 +12,7 @@ Stack: TypeScript (strict) · Vite · HTML canvas 2D · Vitest · zod · Node 22
 | Command | What it does |
 | --- | --- |
 | `npm install` | project-local dependencies (Node ≥ 22) |
-| `npm run dev` | playable dev build at http://localhost:5173 with dev tools (F1 overlay, `/__data/` endpoint) |
+| `npm run dev` | playable dev build at http://localhost:5173 with dev tools (F1 overlay, F2 dev panel, `/__data/` endpoint) |
 | `npm run build` | production build into `dist/` (no dev tools, no endpoint; verified by `tests/slow/build.test.ts`) |
 | `npm run preview` | serve the production build |
 | `npm run check` | `tsc --noEmit` + the architecture test |
@@ -29,7 +29,9 @@ Environment: `SIEGE_TEST_WORKERS` (vitest workers, default 4) and `SIEGE_SWEEP_W
 
 - **Title**: enter a seed (blank = random) → **New run**. **Dev fight** plays two dev boards through the same `fight()` the headless tools use.
 - **Run**: shop row (click to buy), bench row (click to select), board (click a player-half cell to place the selected unit; click a board unit to select it; click the selected board unit again to bench it; click another unit while one is selected to swap). Buttons: Reroll, Buy XP, Sell, Start combat / Next round, speed 1×/2×/4×, Pause.
-- Hotkeys: `R` reroll · `X` buy xp · `S` sell selected · `Space` start combat / next round · `1` `2` `3` speed 1×/2×/4× · `Esc` pause · `F1` dev overlay (fps, tick, round hash, content hash, seed).
+- Placement: click a unit to select it, click an empty hex to place it, click it again to bench it, or **drag** it (from the board or from a bench card) onto a hex — the hex under the cursor rings green when the drop is legal and red when it is not, with the sim's reason in the HUD.
+- The play area is a 16:9 box centred in the window (letterboxed at other aspect ratios), so the board scales with the window without changing its layout.
+- Hotkeys: `R` reroll · `X` buy xp · `S` sell selected · `Space` start combat / next round · `1` `2` `3` speed 1×/2×/4× · `Esc` pause · `F1` dev overlay (fps, tick, round hash, content hash, seed) · `F2` dev panel (a button per `dev:` cheat, plus the seed and content hash to quote in a bug report).
 - **Results** after victory (survive the last encounter) or defeat (hp 0 / abandon) → back to Title.
 
 ## Layout
@@ -49,7 +51,8 @@ tests/       fast tests; tests/slow/ for anything over ~20 s
 
 ## Engine contracts
 
-- **Commands**: every player action is a `Command` (`buy`, `sell`, `place`, `bench`, `swap`, `reroll`, `levelUp`, `startCombat`, `nextRound`, `abandon`). `validateCommand` returns a reason or `null`; `applyCommand` mutates only when legal; `legalCommands(state, content)` enumerates what a bot may do (excludes `abandon`).
+- **Commands**: every player action is a `Command` (`buy`, `sell`, `place`, `bench`, `swap`, `reroll`, `levelUp`, `startCombat`, `nextRound`, `abandon`). `validateCommand` returns a reason or `null`; `applyCommand` mutates only when legal; `legalCommands(state, content)` enumerates what a bot may do (excludes `abandon` and the `dev:` namespace).
+- **Dev commands**: the cheats live in a `dev:` namespace (`dev:gold`, `dev:xp`, `dev:invinciblePieces`, `dev:invinciblePlayer`, `dev:skipRound`, `dev:addAugment`, `dev:openShop`, `dev:spawnUnit`, `dev:giveItem`). They are ordinary Commands recorded in the log, accepted only when `RunConfig.devCommands` is set — `npm run dev` sets it, `npm run build` never does — so a cheated run still replays hash for hash (`replayRun(seed, log, content, { devCommands: true })`).
 - **Determinism**: a run is `seed + command log`. `RunState.hashes` holds the FNV-1a 64 state hash at creation, at every `nextRound`, and at run end. `replayRun` / `verifyReplay` reproduce and check them. RNG streams (`shop`, `encounter`, `combat`, `loot`, `augment`, `misc`) are derived from `(seed, name)` and serialised in the state.
 - **fight(left, right, seed, rules)** is pure. Boards are authored in owner-half coordinates (rows 4–7); the right side is mirrored. It returns winner, reason (`elimination` | `timeout`), ticks, the ordered event list (spawn/move/attack/hit/heal/statMod/stun/cast/death/end), survivors, a per-unit damage ledger and a hash.
 - **Stats**: `STAT_KIND` classifies each stat as `mul` or `flat`. Modifiers from different sources multiply, values within one source add, flat modifiers add.

@@ -20,10 +20,13 @@ import {
   xpNeeded,
   type RunState,
 } from './run.ts';
-import { refreshShop, copiesForStar, addXp } from './run.ts';
+import { refreshShop, copiesForStar, addXp, poolCapacity } from './run.ts';
+import { applyDevCommand, isDevCommand, validateDevCommand, type DevCommand, type DevCommandType } from './devCommands.ts';
 import type { OwnedUnit, PlacedUnit } from './units.ts';
 
-export type Command =
+export type { DevCommand, DevCommandType };
+
+export type PlayerCommand =
   | { type: 'buy'; slot: number }
   | { type: 'sell'; uid: number }
   | { type: 'place'; uid: number; col: number; row: number }
@@ -35,8 +38,12 @@ export type Command =
   | { type: 'nextRound' }
   | { type: 'abandon' };
 
+/** Player commands plus the dev cheats; `dev:` commands need RunConfig.devCommands. */
+export type Command = PlayerCommand | DevCommand;
+
+export type PlayerCommandType = PlayerCommand['type'];
 export type CommandType = Command['type'];
-export const COMMAND_TYPES: readonly CommandType[] = ['buy', 'sell', 'place', 'bench', 'swap', 'reroll', 'levelUp', 'startCombat', 'nextRound', 'abandon'];
+export const COMMAND_TYPES: readonly PlayerCommandType[] = ['buy', 'sell', 'place', 'bench', 'swap', 'reroll', 'levelUp', 'startCombat', 'nextRound', 'abandon'];
 
 export type CommandResult = { ok: true; state: RunState; fight: FightResult | null } | { ok: false; reason: string };
 
@@ -47,7 +54,14 @@ function isInt(v: unknown): v is number {
 /** Returns a human-readable rejection reason, or null when the command is legal. */
 export function validateCommand(state: RunState, cmd: Command, content: Content): string | null {
   if (!cmd || typeof cmd !== 'object' || typeof cmd.type !== 'string') return 'malformed command';
-  if (!COMMAND_TYPES.includes(cmd.type)) return `unknown command type ${String(cmd.type)}`;
+  if (isDevCommand(cmd)) {
+    // The dev gate comes before the phase checks so the reason is the same in every phase.
+    if (!state.config.devCommands) return `dev commands are disabled in this run (${cmd.type})`;
+    if (state.phase === 'ended') return 'run has ended';
+    if (state.phase !== 'planning') return `${cmd.type} requires the planning phase (phase is ${state.phase})`;
+    return validateDevCommand(state, cmd, content);
+  }
+  if (!(COMMAND_TYPES as readonly string[]).includes(cmd.type)) return `unknown command type ${String(cmd.type)}`;
   const eco = content.rules.economy;
   if (state.phase === 'ended') return 'run has ended';
   if (cmd.type === 'abandon') return null;
@@ -122,6 +136,10 @@ export function applyCommand(state: RunState, cmd: Command, content: Content): C
   if (reason !== null) return { ok: false, reason };
   state.commandCount++;
   const eco = content.rules.economy;
+  if (isDevCommand(cmd)) {
+    applyDevCommand(state, cmd, content);
+    return { ok: true, state, fight: null };
+  }
   switch (cmd.type) {
     case 'buy': {
       const defId = state.shop[cmd.slot] as string;
@@ -144,7 +162,7 @@ export function applyCommand(state: RunState, cmd: Command, content: Content): C
     case 'sell': {
       const unit = removeUnit(state, cmd.uid) as OwnedUnit;
       state.gold += sellValue(unit, content);
-      returnToPool(state, unit.defId, copiesForStar(unit.star, content));
+      returnToPool(state, unit.defId, copiesForStar(unit.star, content), content);
       return { ok: true, state, fight: null };
     }
     case 'place': {
@@ -229,8 +247,9 @@ export function applyCommand(state: RunState, cmd: Command, content: Content): C
  * Concrete commands a bot may issue now (excludes `abandon`). Every listed command passes
  * validateCommand. Order is deterministic.
  */
-export function legalCommands(state: RunState, content: Content): Command[] {
-  const out: Command[] = [];
+export function legalCommands(state: RunState, content: Content): PlayerCommand[] {
+  // Bots never cheat: `dev:` commands are deliberately absent from this list.
+  const out: PlayerCommand[] = [];
   if (state.phase === 'ended') return out;
   if (state.phase === 'reward') {
     out.push({ type: 'nextRound' });
@@ -241,7 +260,7 @@ export function legalCommands(state: RunState, content: Content): Command[] {
   const board = content.board;
 
   for (let slot = 0; slot < state.shop.length; slot++) {
-    const cmd: Command = { type: 'buy', slot };
+    const cmd: PlayerCommand = { type: 'buy', slot };
     if (validateCommand(state, cmd, content) === null) out.push(cmd);
   }
   const units: OwnedUnit[] = [...state.board];
@@ -302,7 +321,11 @@ export function checkInvariants(state: RunState, content: Content): string[] {
   for (let i = 1; i < state.board.length; i++) {
     if ((state.board[i] as PlacedUnit).uid < (state.board[i - 1] as PlacedUnit).uid) problems.push('board not sorted by uid');
   }
-  for (const [id, n] of Object.entries(state.pool)) if (n < 0 || !Number.isFinite(n)) problems.push(`pool ${id} = ${n}`);
+  for (const [id, n] of Object.entries(state.pool)) {
+    if (n < 0 || !Number.isFinite(n)) problems.push(`pool ${id} = ${n}`);
+    else if (n > poolCapacity(id, content)) problems.push(`pool ${id} = ${n} > capacity ${poolCapacity(id, content)}`);
+  }
+  if (!Number.isSafeInteger(state.gold)) problems.push(`gold ${state.gold} is not a safe integer`);
   if (state.phase === 'ended' && state.outcome === null) problems.push('ended without outcome');
   return problems;
 }

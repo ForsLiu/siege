@@ -5,6 +5,7 @@ import type { BoardConfig, Cell } from '../sim/hex.ts';
 import { mirrorCell } from '../sim/hex.ts';
 import type { Content } from '../sim/rules.ts';
 import type { BoardUnit, PlacedUnit } from '../sim/units.ts';
+import { letterbox, type Box } from './layout.ts';
 
 const SQRT3 = Math.sqrt(3);
 
@@ -15,6 +16,8 @@ export interface PlanningView {
   selectedUid: number | null;
   hover: Cell | null;
   content: Content;
+  /** Cell under a dragged unit, highlighted green when the drop is legal and red when not. */
+  drop?: { cell: Cell | null; valid: boolean } | null;
 }
 
 export interface FightView {
@@ -31,6 +34,9 @@ const COLORS = {
   cellEnemy: '#2b1f22',
   cellLine: '#2f3b46',
   hover: '#3d5a73',
+  dropOk: '#22c55e',
+  dropBad: '#ef4444',
+  letterbox: '#07090b',
   selected: '#c9a227',
   teamLeft: '#3b82f6',
   teamRight: '#ef4444',
@@ -49,6 +55,7 @@ export class BoardRenderer {
   private originY = 0;
   private width = 0;
   private height = 0;
+  private play: Box = { x: 0, y: 0, width: 0, height: 0 };
 
   private readonly canvas: HTMLCanvasElement;
   private readonly board: BoardConfig;
@@ -70,16 +77,19 @@ export class BoardRenderer {
     this.canvas.width = Math.floor(this.width * dpr);
     this.canvas.height = Math.floor(this.height * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // The board lives inside a fixed-aspect play area; the rest of the canvas is letterbox.
+    this.play = letterbox(this.width, this.height);
     const cols = this.board.cols + 0.5;
     const rows = this.board.rows;
-    const sizeByWidth = this.width / (SQRT3 * cols) - 1;
-    const sizeByHeight = this.height / (1.5 * rows + 0.5) - 1;
+    const sizeByWidth = this.play.width / (SQRT3 * cols) - 1;
+    const sizeByHeight = this.play.height / (1.5 * rows + 0.5) - 1;
     this.size = Math.max(8, Math.floor(Math.min(sizeByWidth, sizeByHeight)));
     const gridW = SQRT3 * this.size * cols;
     const gridH = this.size * (1.5 * rows + 0.5);
-    this.originX = (this.width - gridW) / 2;
-    this.originY = (this.height - gridH) / 2;
+    this.originX = this.play.x + (this.play.width - gridW) / 2;
+    this.originY = this.play.y + (this.play.height - gridH) / 2;
   }
+
 
   cellCenter(col: number, row: number): { x: number; y: number } {
     const w = SQRT3 * this.size;
@@ -120,10 +130,12 @@ export class BoardRenderer {
     ctx.closePath();
   }
 
-  private drawGrid(hover: Cell | null): void {
+  private drawGrid(hover: Cell | null, drop: { cell: Cell | null; valid: boolean } | null = null): void {
     const ctx = this.ctx;
-    ctx.fillStyle = COLORS.bg;
+    ctx.fillStyle = COLORS.letterbox;
     ctx.fillRect(0, 0, this.width, this.height);
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(this.play.x, this.play.y, this.play.width, this.play.height);
     const playerStart = this.board.rows - this.board.playerRows;
     for (let row = 0; row < this.board.rows; row++) {
       for (let col = 0; col < this.board.cols; col++) {
@@ -132,8 +144,9 @@ export class BoardRenderer {
         const isHover = hover !== null && hover.col === col && hover.row === row;
         ctx.fillStyle = isHover ? COLORS.hover : row >= playerStart ? COLORS.cellPlayer : COLORS.cellEnemy;
         ctx.fill();
-        ctx.strokeStyle = COLORS.cellLine;
-        ctx.lineWidth = 1;
+        const isDrop = drop?.cell != null && drop.cell.col === col && drop.cell.row === row;
+        ctx.strokeStyle = isDrop ? (drop.valid ? COLORS.dropOk : COLORS.dropBad) : COLORS.cellLine;
+        ctx.lineWidth = isDrop ? 3 : 1;
         ctx.stroke();
       }
     }
@@ -197,7 +210,7 @@ export class BoardRenderer {
   }
 
   drawPlanning(view: PlanningView): void {
-    this.drawGrid(view.hover);
+    this.drawGrid(view.hover, view.drop ?? null);
     for (const e of view.enemy) {
       const m = mirrorCell(e, this.board);
       const c = this.cellCenter(m.col, m.row);

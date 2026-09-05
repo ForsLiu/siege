@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand, checkInvariants, legalCommands, validateCommand, type Command } from '../src/sim/commands.ts';
 import { Rng } from '../src/sim/rng.ts';
-import { createRun, drawUnit, interestFor, sellValue, stateHash, type RunState } from '../src/sim/run.ts';
+import { createRun, drawUnit, interestFor, poolCapacity, sellValue, stateHash, type RunState } from '../src/sim/run.ts';
 import type { OwnedUnit } from '../src/sim/units.ts';
 import { devContent } from './helpers.ts';
 
@@ -217,13 +217,18 @@ describe('economy arithmetic against rules', () => {
     const s = fresh();
     const def = content.unitsById['dev.knight']!;
     const u = give(s, 'dev.knight', 2, 'bench');
-    const expected = Math.floor(def.cost * Math.pow(eco.mergeCopies, 1) * eco.sellRefund);
+    const copies = Math.pow(eco.mergeCopies, 1);
+    const expected = Math.floor(def.cost * copies * eco.sellRefund);
     expect(sellValue(u, content)).toBe(expected);
+    // `give` conjures a unit outside the pool accounting; a bought 2-star would have taken its
+    // copies out of the pool, and the pool is capped at its configured size (P0-15-04).
+    s.pool['dev.knight'] = (s.pool['dev.knight'] as number) - copies;
     const poolBefore = s.pool['dev.knight'] as number;
     const goldBefore = s.gold;
     expect(applyCommand(s, { type: 'sell', uid: u.uid }, content).ok).toBe(true);
     expect(s.gold).toBe(goldBefore + expected);
     expect(s.pool['dev.knight']).toBe(poolBefore + eco.mergeCopies);
+    expect(s.pool['dev.knight']).toBeLessThanOrEqual(poolCapacity('dev.knight', content));
   });
   it('reroll costs rerollCost, returns shop units to the pool and redraws', () => {
     const s = fresh();

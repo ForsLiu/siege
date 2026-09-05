@@ -1,12 +1,14 @@
 // Replay: (seed, command log) -> the same run, hash for hash.
 import { applyCommand, type Command } from './commands.ts';
 import type { Content } from './rules.ts';
-import { createRun, type RunState } from './run.ts';
+import { createRun, type RunOptions, type RunState } from './run.ts';
 
 export interface RunLog {
   version: 1;
   seed: number;
   contentHash: string;
+  /** The run accepted `dev:` commands; a replay must enable them to reproduce the hashes. */
+  devCommands: boolean;
   commands: Command[];
 }
 
@@ -17,13 +19,18 @@ export interface ReplayResult {
   rejected: { index: number; reason: string } | null;
 }
 
-export function replayRun(seed: number, commands: readonly Command[], content: Content): ReplayResult {
-  const state = createRun(seed, content);
+export function replayRun(seed: number, commands: readonly Command[], content: Content, options: RunOptions = {}): ReplayResult {
+  const state = createRun(seed, content, options);
   for (let i = 0; i < commands.length; i++) {
     const res = applyCommand(state, commands[i] as Command, content);
     if (!res.ok) return { state, hashes: state.hashes, rejected: { index: i, reason: res.reason } };
   }
   return { state, hashes: state.hashes, rejected: null };
+}
+
+/** Replay a recorded log, using the dev-command flag the log was recorded with. */
+export function replayLog(log: RunLog, content: Content): ReplayResult {
+  return replayRun(log.seed, log.commands, content, { devCommands: log.devCommands });
 }
 
 export interface VerifyResult {
@@ -35,8 +42,8 @@ export interface VerifyResult {
   rejected: { index: number; reason: string } | null;
 }
 
-export function verifyReplay(seed: number, commands: readonly Command[], expectedHashes: readonly string[], content: Content): VerifyResult {
-  const r = replayRun(seed, commands, content);
+export function verifyReplay(seed: number, commands: readonly Command[], expectedHashes: readonly string[], content: Content, options: RunOptions = {}): VerifyResult {
+  const r = replayRun(seed, commands, content, options);
   const n = Math.max(expectedHashes.length, r.hashes.length);
   for (let i = 0; i < n; i++) {
     const e = expectedHashes[i] ?? null;

@@ -41,7 +41,7 @@ export function runJob(job: SweepJob): SweepJobResult {
       finalGold: report.finalGold,
       finalLevel: report.finalLevel,
       commandCount: report.commandCount,
-      fightTicks: report.rounds.map((r) => r.fight.ticks),
+      fightTicks: report.rounds.map((r) => r.fight?.ticks ?? 0),
       finalHash: report.hashes[report.hashes.length - 1] ?? null,
       ms: performance.now() - t0,
     };
