@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { flagBool, flagInt, flagSeed, flagString, parseArgs, UsageError } from '../tools/args.ts';
 import { getPolicy, policyNames } from '../tools/policies/index.ts';
-import { parsePolicies, prepareOutPath, resolveWorkers, runSweep } from '../tools/sweep.ts';
+import { aggregate, parsePolicies, prepareOutPath, resolveWorkers, runSweep, type PolicyAggregate } from '../tools/sweep.ts';
 import type { SweepJobResult } from '../tools/sweep-worker.ts';
 
 describe('tools/args', () => {
@@ -116,10 +116,24 @@ describe('tools/sweep robustness (P0-B2)', () => {
     expect(results).toHaveLength(1);
   }, 60_000);
 
-  it('validates SIEGE_SWEEP_WORKERS exactly like --workers', () => {
+  it('averages ms over the jobs that actually ran', () => {
+    const base = { policy: 'random', ok: true, error: null, outcome: 'loss' as const, roundsSurvived: 3, finalHp: 0, finalGold: 0, finalLevel: 2, commandCount: 9, fightTicks: [30], finalHash: 'x' };
+    const ran: SweepJobResult = { ...base, seed: 1, ms: 30 };
+    const never: SweepJobResult = { ...base, seed: 2, ok: false, error: 'no worker survived to run this job', outcome: null, roundsSurvived: 0, fightTicks: [], finalHash: null, ms: 0 };
+    const agg = aggregate([ran, never], ['random'])[0] as PolicyAggregate;
+    expect(agg.runs).toBe(2);
+    expect(agg.exceptions).toBe(1);
+    expect(agg.meanMs).toBe(30);
+  });
+
+  it('validates SIEGE_SWEEP_WORKERS exactly like --workers, bar trimming', () => {
     expect(resolveWorkers(parseArgs([]), {})).toBe(4);
     expect(resolveWorkers(parseArgs([]), { SIEGE_SWEEP_WORKERS: '8' })).toBe(8);
+    // An env value is trimmed and a blank one counts as unset — the one deliberate difference
+    // from the flag, which rejects both (QA on P0-B2).
     expect(resolveWorkers(parseArgs([]), { SIEGE_SWEEP_WORKERS: '' })).toBe(4);
+    expect(resolveWorkers(parseArgs([]), { SIEGE_SWEEP_WORKERS: '   ' })).toBe(4);
+    expect(resolveWorkers(parseArgs([]), { SIEGE_SWEEP_WORKERS: ' 8 ' })).toBe(8);
     // The flag still wins over the environment.
     expect(resolveWorkers(parseArgs(['--workers', '2']), { SIEGE_SWEEP_WORKERS: '8' })).toBe(2);
     for (const bad of ['-5', '0', '99999', '1.5', 'abc']) {

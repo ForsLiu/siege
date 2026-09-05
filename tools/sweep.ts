@@ -58,7 +58,9 @@ export function aggregate(results: SweepJobResult[], policies: string[]): Policy
       meanFinalHp: mean(ok.map((r) => r.finalHp)),
       meanFinalLevel: mean(ok.map((r) => r.finalLevel)),
       meanCommands: mean(ok.map((r) => r.commandCount)),
-      meanMs: mean(rs.map((r) => r.ms)),
+      // Over `ok` only, like every other column: a job no worker ran has ms 0 and would
+      // otherwise pull the mean down (QA on P0-B2).
+      meanMs: mean(ok.map((r) => r.ms)),
     };
   });
 }
@@ -213,7 +215,9 @@ export function parsePolicies(raw: string): string[] {
 /**
  * Worker count: `--workers` wins, else SIEGE_SWEEP_WORKERS, else 4. The environment variable
  * is validated through the very same flag parser (P0-B2: it used to bypass the 1..64 range, so
- * `-5` silently ran serial and `99999` tried to spawn 99999 threads).
+ * `-5` silently ran serial and `99999` tried to spawn 99999 threads). It differs from the flag
+ * in exactly one way, deliberately: an env value is trimmed, and an empty or all-whitespace one
+ * counts as unset, because that is how a value picked up from a shell script reads.
  */
 export function resolveWorkers(args: Args, env: Record<string, string | undefined>): number {
   const raw = env.SIEGE_SWEEP_WORKERS;
