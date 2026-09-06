@@ -1,23 +1,18 @@
 // The run controller: run state, command dispatch, fight playback and abandon, with no DOM.
 // src/app/main.ts is glue over this; the fast tier drives it directly (P0-09).
-import { buildTimeline, type Timeline } from '../render/timeline.ts';
 import { applyCommand, type Command } from '../sim/commands.ts';
 import type { FightResult } from '../sim/fight.ts';
 import type { Content } from '../sim/rules.ts';
 import { createRun, findUnit, type RunState } from '../sim/run.ts';
 import type { RunUiMode } from '../ui/runUi.ts';
+import { advancePlayback, startPlayback as startPlaybackState, type PlaybackState } from './playback.ts';
 import type { ScreenEvent } from './screens.ts';
+
+export type { PlaybackState } from './playback.ts';
 
 export interface DispatchResult {
   ok: boolean;
   reason: string | null;
-}
-
-export interface PlaybackState {
-  timeline: Timeline;
-  /** Fractional sim tick the renderer is showing. */
-  tick: number;
-  onDone: (() => void) | null;
 }
 
 export interface RunControllerDeps {
@@ -102,20 +97,20 @@ export class RunController {
     const pending = this.play;
     this.play = null;
     pending?.onDone?.();
-    this.play = { timeline: buildTimeline(result, this.moveTicks), tick: 0, onDone };
+    this.play = startPlaybackState(result, this.moveTicks, onDone);
   }
 
   /** Advances playback by `dt` seconds at `speed`; finishes it past the last tick. */
   advance(dt: number, speed: number): void {
     const p = this.play;
     if (!p) return;
-    // Defensive: a hostile or broken clock must never stall or rewind the playback.
-    if (!Number.isFinite(dt) || !Number.isFinite(speed) || dt <= 0 || speed <= 0) return;
-    p.tick += dt * this.tickRate * speed;
-    if (p.tick < p.timeline.ticks + this.tickRate * 0.5) return;
-    this.play = null;
-    p.onDone?.();
-    this.deps.onChange();
+    const next = advancePlayback(p, dt, speed, this.tickRate);
+    if (next === p) return;
+    this.play = next;
+    if (next === null) {
+      p.onDone?.();
+      this.deps.onChange();
+    }
   }
 
   /**

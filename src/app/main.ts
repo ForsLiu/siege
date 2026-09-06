@@ -14,13 +14,17 @@ import { fightRulesFrom } from '../sim/rules.ts';
 import { boardUnitAt, currentEncounter, shopTierCount } from '../sim/run.ts';
 import { createPauseScreen, createResultsScreen, createTitleScreen } from '../ui/screens.ts';
 import { createRunUi } from '../ui/runUi.ts';
+import { createSandboxUi } from '../ui/sandboxUi.ts';
 import { canDrag, dropOutcome, type DropOutcome } from './drag.ts';
 import { hotkeyAction, isViewAction } from './hotkeys.ts';
+import type { PlaybackState } from './playback.ts';
 import { boardClick, boardDrop, type PointerOutcome } from './pointer.ts';
-import { RunController, type PlaybackState } from './runController.ts';
+import { RunController } from './runController.ts';
+import { SandboxController, type SandboxPersistence } from './sandboxController.ts';
 import { initialScreen, reduceScreen, type ScreenEvent, type ScreenState } from './screens.ts';
 import type { DevOverlay } from '../dev/overlay.ts';
 import type { DevPanel } from '../dev/panel.ts';
+import { loadSandboxSetupFile } from '../data/loader.ts';
 
 const content = loadBrowserContent();
 const app = document.getElementById('app') as HTMLElement;
@@ -64,12 +68,17 @@ function dispatch(cmd: Command): { ok: boolean; reason: string | null } {
   return controller.dispatch(cmd);
 }
 
+const sandboxController = new SandboxController({ content, onScreenEvent: emit, onChange: () => refreshUi() });
+
 const title = createTitleScreen(app, devBoardNames, content.contentHash, {
   onStartRun(seed) {
     controller.startRun(seed);
   },
   onDevFight(left, right, seed) {
     startDevFight(left, right, seed);
+  },
+  onSandbox() {
+    sandboxController.enter();
   },
 });
 const results = createResultsScreen(app, {
@@ -125,13 +134,66 @@ const runUi = createRunUi(app, {
   },
 });
 
+const sandboxUi = createSandboxUi(app, {
+  onAddUnit(side, defId) {
+    sandboxController.addUnit(side, defId);
+  },
+  onRemoveUnit(side, index) {
+    sandboxController.removeUnit(side, index);
+  },
+  onSetStar(side, index, star) {
+    sandboxController.setStar(side, index, star);
+  },
+  onSetItems(side, index, items) {
+    sandboxController.setItems(side, index, items);
+  },
+  onSetStatOverride(side, index, stat, value) {
+    sandboxController.setStatOverride(side, index, stat, value);
+  },
+  onSetRules(patch) {
+    sandboxController.setRules(patch);
+  },
+  onSetSeed(seed) {
+    sandboxController.setSeed(seed);
+  },
+  onSetN(n) {
+    sandboxController.setN(n);
+  },
+  onRunOnce() {
+    sandboxController.runOnce();
+  },
+  onReplay() {
+    sandboxController.replay();
+  },
+  onRunN() {
+    sandboxController.runN();
+  },
+  onSave(name) {
+    void sandboxController.save(name);
+  },
+  onLoad(name) {
+    void sandboxController.load(name);
+  },
+  onSpeed(s) {
+    speed = s;
+    refreshUi();
+  },
+  onBack() {
+    emit({ type: 'toTitle' });
+  },
+});
+
 function syncScreens(): void {
   const run = controller.run;
   drag = null;
-  if (screen.screen === 'title') controller.clear();
+  if (screen.screen === 'title') {
+    controller.clear();
+    sandboxController.clear();
+  }
   title.root.hidden = screen.screen !== 'title';
   runUi.root.hidden = screen.screen !== 'run';
   devBar.hidden = screen.screen !== 'devFight';
+  sandboxUi.root.hidden = screen.screen !== 'sandbox';
   if (screen.screen === 'results' && run) {
     results.show({
       outcome: run.outcome ?? 'loss',
@@ -171,6 +233,19 @@ function refreshUi(): void {
   const run = controller.run;
   if (screen.screen === 'run' && run) {
     runUi.update({ state: run, content, mode: controller.mode(), selectedUid: controller.selectedUid, speed, message: controller.message });
+  }
+  if (screen.screen === 'sandbox') {
+    sandboxUi.update({
+      content,
+      setup: sandboxController.setup,
+      seed: sandboxController.seed,
+      n: sandboxController.n,
+      speed,
+      message: sandboxController.message,
+      lastAggregate: sandboxController.lastAggregate,
+      canReplay: sandboxController.lastResult !== null,
+      isPlaying: sandboxController.playback !== null,
+    });
   }
   devPanel?.update({
     seed: screen.screen === 'title' ? null : controller.seed,
@@ -348,6 +423,21 @@ function frame(ts: number): void {
   } else if (screen.screen === 'devFight') {
     if (playback) drawPlayback(playback);
     else if (devFightResult) renderer.drawFight({ frame: devFightFinalFrame, tick: devFightResult.ticks, moveTicks, content });
+  } else if (screen.screen === 'sandbox') {
+    if (!screen.paused) sandboxController.advance(dt, speed);
+    const sandboxPlay = sandboxController.playback;
+    if (sandboxPlay) {
+      drawPlayback(sandboxPlay, sandboxDisplayContent());
+    } else {
+      const setup = sandboxController.setup;
+      renderer.drawPlanning({
+        units: setup.left.map((u, i) => ({ uid: i + 1, defId: u.defId, star: u.star, items: u.items, col: u.col, row: u.row })),
+        enemy: setup.right,
+        selectedUid: null,
+        hover: null,
+        content,
+      });
+    }
   } else {
     renderer.drawPlanning({ units: [], enemy: [], selectedUid: null, hover: null, content });
   }
@@ -366,9 +456,17 @@ function frame(ts: number): void {
   requestAnimationFrame(frame);
 }
 
-function drawPlayback(p: PlaybackState): void {
+function drawPlayback(p: PlaybackState, displayContent: typeof content = content): void {
   const idx = Math.min(p.timeline.frames.length - 1, Math.max(0, Math.floor(p.tick)));
-  renderer.drawFight({ frame: p.timeline.frames[idx] ?? [], tick: p.tick, moveTicks, content });
+  renderer.drawFight({ frame: p.timeline.frames[idx] ?? [], tick: p.tick, moveTicks, content: displayContent });
+}
+
+/** `content` with the sandbox's synthetic per-instance unit defs merged in, so the renderer's
+ *  labels/star work during sandbox playback; the sim never sees this, only `drawFight` does. */
+function sandboxDisplayContent(): typeof content {
+  const units = sandboxController.lastUnits;
+  if (!units) return content;
+  return { ...content, unitsById: { ...content.unitsById, ...units } };
 }
 
 if (__SIEGE_DEV__) {
@@ -395,6 +493,23 @@ if (__SIEGE_DEV__) {
         tiers: shopTierCount(content),
         cells,
       });
+      const persistence: SandboxPersistence = {
+        async save(name, setup) {
+          const res = await dev.writeDataFile(`dev/boards/sandbox-${name}.json`, setup);
+          return { ok: res.ok, error: res.ok ? null : (res.error ?? 'save failed') };
+        },
+        async load(name) {
+          const path = `dev/boards/sandbox-${name}.json`;
+          const res = await dev.readDataFile(path);
+          if (!res.ok) return { ok: false, setup: null, error: res.error ?? 'load failed' };
+          try {
+            return { ok: true, setup: loadSandboxSetupFile(path, res.value, content), error: null };
+          } catch (e) {
+            return { ok: false, setup: null, error: e instanceof Error ? e.message : String(e) };
+          }
+        },
+      };
+      sandboxController.setPersistence(persistence);
       refreshUi();
     })
     .catch((e: unknown) => console.warn('dev tools unavailable', e));

@@ -3,6 +3,8 @@ dist/
 .vite/
 bench/
 telemetry/
+# Sandbox setups (P0-18) saved through the dev data endpoint at runtime, not authored content.
+data/dev/boards/sandbox-*.json
 *.log
 *.tsbuildinfo
 STOP.md

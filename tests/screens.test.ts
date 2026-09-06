@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { initialScreen, LEGAL_TRANSITIONS, reduceScreen, SCREEN_EVENT_TYPES, type Screen, type ScreenEvent, type ScreenState } from '../src/app/screens.ts';
 
-const SCREENS: Screen[] = ['title', 'run', 'results', 'devFight'];
+const SCREENS: Screen[] = ['title', 'run', 'results', 'devFight', 'sandbox'];
 
 function at(screen: Screen, paused = false): ScreenState {
   return { screen, paused, outcome: null };
@@ -60,6 +60,14 @@ describe('screen state machine', () => {
         }
       }
     }
+  });
+
+  it('title -> sandbox -> title, with no pause on the sandbox screen', () => {
+    let s = reduceScreen(initialScreen(), { type: 'enterSandbox' });
+    expect(s.screen).toBe('sandbox');
+    expect(reduceScreen(s, { type: 'togglePause' })).toBe(s);
+    s = reduceScreen(s, { type: 'toTitle' });
+    expect(s.screen).toBe('title');
   });
 
   it('results keeps the outcome until leaving', () => {

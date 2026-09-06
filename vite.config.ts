@@ -17,5 +17,14 @@ export default defineConfig(({ command }) => ({
   },
   server: {
     port: 5173,
+    watch: {
+      // Sandbox setups (P0-17/P0-18) are dev-authored test fixtures written through the dev
+      // data endpoint, not game content the running app depends on: without this, saving one
+      // adds a new file under the glob `src/data/browser.ts` eagerly imports, and Vite's
+      // default full-reload-on-new-glob-match wipes the in-progress sandbox editor session on
+      // every Save. Watching them would matter for a future edit-and-reload workflow (P0-07's
+      // Tuner, on existing content files only); a brand-new sandbox file is never that.
+      ignored: ['**/data/dev/boards/sandbox-*.json'],
+    },
   },
 }));

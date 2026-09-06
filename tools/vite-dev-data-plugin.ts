@@ -27,7 +27,10 @@ export function devDataPlugin(): Plugin {
           try {
             return reply(res, 200, { ok: true, kind, value: JSON.parse(readFileSync(target, 'utf8')) });
           } catch (e) {
-            return reply(res, 404, { ok: false, error: String(e) });
+            // Not the absolute server path from a raw fs error (QA on P0-18): this is local-dev
+            // only, but the message reaches the browser UI verbatim (e.g. a failed sandbox load).
+            const notFound = e instanceof Error && 'code' in e && e.code === 'ENOENT';
+            return reply(res, 404, { ok: false, error: notFound ? `no such file: ${rel}` : String(e) });
           }
         }
         if (req.method !== 'POST') return reply(res, 405, { ok: false, error: 'method not allowed' });
@@ -44,8 +47,16 @@ export function devDataPlugin(): Plugin {
           }
           const result = validateFile(kind, parsed);
           if (!result.ok) return reply(res, 422, { ok: false, error: result.error });
-          mkdirSync(dirname(target), { recursive: true });
-          writeFileSync(target, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
+          // A filesystem error here (e.g. ENAMETOOLONG from an over-long saved-setup name) must
+          // reply with an error, not throw inside the request callback: an uncaught exception
+          // there crashes the whole dev server, taking the rest of the app down with it
+          // (QA on P0-18, reproduced with a 250-character sandbox setup name).
+          try {
+            mkdirSync(dirname(target), { recursive: true });
+            writeFileSync(target, JSON.stringify(parsed, null, 2) + '\n', 'utf8');
+          } catch (e) {
+            return reply(res, 500, { ok: false, error: String(e) });
+          }
           return reply(res, 200, { ok: true, kind, path: rel });
         });
       });

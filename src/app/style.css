@@ -205,3 +205,35 @@ body {
   max-height: 50vh;
   overflow: auto;
 }
+
+.sandbox-ui {
+  max-height: 46vh;
+  overflow: auto;
+}
+
+.sandbox-roster {
+  flex-wrap: wrap;
+}
+
+.sandbox-roster-unit {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.sandbox-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sandbox-unit {
+  flex-wrap: wrap;
+}
+
+.sandbox-stat {
+  width: 64px;
+}
+
+.sandbox-results {
+  font-size: 12px;
+}

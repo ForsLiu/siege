@@ -23,8 +23,10 @@ export function kindForPath(path: string): DataFileKind | null {
   const entry = CONTENT_MANIFEST.find((e) => e.path === path);
   if (entry) return entry.kind;
   // Sandbox setups (P0-17) share the boards directory but have a distinct shape (two sides
-  // plus fight-rule overrides), so they get their own filename prefix and schema kind.
-  if (/^dev\/boards\/sandbox-[a-z0-9_-]+\.json$/.test(path)) return 'sandboxSetupFile';
+  // plus fight-rule overrides), so they get their own filename prefix and schema kind. The name
+  // is capped well under filesystem name limits (QA on P0-18: an unbounded name reached
+  // ENAMETOOLONG and crashed the dev server before that endpoint's write got its own try/catch).
+  if (/^dev\/boards\/sandbox-[a-z0-9_-]{1,64}\.json$/.test(path)) return 'sandboxSetupFile';
   if (/^dev\/boards\/[a-z0-9_-]+\.json$/.test(path)) return 'boardFile';
   return null;
 }
