@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Content } from '../sim/rules.ts';
+import type { SandboxSetup } from '../sim/sandbox.ts';
 import type { BoardUnit } from '../sim/units.ts';
-import { ContentError, loadBoardFile, loadContent, type RawContentFiles } from './loader.ts';
+import { ContentError, loadBoardFile, loadContent, loadSandboxSetupFile, type RawContentFiles } from './loader.ts';
 import { CONTENT_MANIFEST } from './manifest.ts';
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -43,4 +44,9 @@ export function loadContentFromDisk(dataDir: string = DATA_DIR): Content {
 export function loadBoardFromDisk(path: string, content: Content): BoardUnit[] {
   const abs = resolve(path);
   return loadBoardFile(abs, readJson(abs), content);
+}
+
+export function loadSandboxSetupFromDisk(path: string, content: Content): SandboxSetup {
+  const abs = resolve(path);
+  return loadSandboxSetupFile(abs, readJson(abs), content);
 }

@@ -3,7 +3,7 @@
 import type { DataFileKind } from './schemas.ts';
 
 export interface ContentManifestEntry {
-  kind: Exclude<DataFileKind, 'boardFile'>;
+  kind: Exclude<DataFileKind, 'boardFile' | 'sandboxSetupFile'>;
   /** Path relative to /data. */
   path: string;
 }
@@ -22,6 +22,9 @@ export const DEV_BOARD_PATHS: readonly string[] = ['dev/boards/a.json', 'dev/boa
 export function kindForPath(path: string): DataFileKind | null {
   const entry = CONTENT_MANIFEST.find((e) => e.path === path);
   if (entry) return entry.kind;
+  // Sandbox setups (P0-17) share the boards directory but have a distinct shape (two sides
+  // plus fight-rule overrides), so they get their own filename prefix and schema kind.
+  if (/^dev\/boards\/sandbox-[a-z0-9_-]+\.json$/.test(path)) return 'sandboxSetupFile';
   if (/^dev\/boards\/[a-z0-9_-]+\.json$/.test(path)) return 'boardFile';
   return null;
 }

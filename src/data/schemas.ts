@@ -5,6 +5,7 @@ import { DAMAGE_KINDS, HOOK_NAMES, TARGET_SELS } from '../sim/effects.ts';
 import type { AuraDef, AuraEffect, Effect, Hooks, ProjectileDef } from '../sim/effects.ts';
 import type { BoardConfig } from '../sim/hex.ts';
 import type { Encounter, Rules } from '../sim/rules.ts';
+import type { SandboxRuleOverrides, SandboxUnit } from '../sim/sandbox.ts';
 import { STAT_KIND, STAT_MAX, STAT_NAMES } from '../sim/stats.ts';
 import type { StatBlock } from '../sim/stats.ts';
 import type { BoardUnit, UnitDef } from '../sim/units.ts';
@@ -143,6 +144,30 @@ export const EncountersFileSchema = z.strictObject({
   encounters: z.array(EncounterSchema).min(1),
 });
 
+/** Direct per-stat overrides for a sandbox unit; each field keeps StatBlockSchema's own bound. */
+export const StatOverridesSchema = StatBlockSchema.partial() satisfies z.ZodType<Partial<StatBlock>>;
+
+export const SandboxUnitSchema = z.strictObject({
+  defId: z.string(),
+  star: posInt,
+  col: nonNegInt,
+  row: nonNegInt,
+  items: z.array(z.string()).default([]),
+  statOverrides: StatOverridesSchema.default({}),
+}) satisfies z.ZodType<SandboxUnit>;
+
+export const SandboxRuleOverridesSchema = z.strictObject({
+  maxSeconds: z.number().finite().positive().optional(),
+  overtime: z.boolean().optional(),
+}) satisfies z.ZodType<SandboxRuleOverrides>;
+
+export const SandboxSetupFileSchema = z.strictObject({
+  _provisional: provisional,
+  left: z.array(SandboxUnitSchema),
+  right: z.array(SandboxUnitSchema),
+  rules: SandboxRuleOverridesSchema.default({}),
+});
+
 const oddsRow = z.array(nonNeg).min(1).refine((a) => Math.abs(a.reduce((s, v) => s + v, 0) - 100) < 1e-9, { message: 'shop odds must sum to 100' });
 
 export const RulesSchema = z
@@ -210,6 +235,7 @@ export const FILE_SCHEMAS = {
   units: UnitsFileSchema,
   encounters: EncountersFileSchema,
   boardFile: BoardFileSchema,
+  sandboxSetupFile: SandboxSetupFileSchema,
 } as const;
 
 export type DataFileKind = keyof typeof FILE_SCHEMAS;

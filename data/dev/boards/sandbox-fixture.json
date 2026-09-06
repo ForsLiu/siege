@@ -1,0 +1,32 @@
+{
+  "_provisional": "Dev sandbox setup fixture (P0-17): one overridden brawler + an archer vs a guardian.",
+  "left": [
+    {
+      "defId": "dev.brawler",
+      "star": 1,
+      "col": 2,
+      "row": 4,
+      "items": ["dev.placeholder-item"],
+      "statOverrides": { "attack": 200, "hp": 500 }
+    },
+    {
+      "defId": "dev.archer",
+      "star": 1,
+      "col": 3,
+      "row": 6,
+      "items": [],
+      "statOverrides": {}
+    }
+  ],
+  "right": [
+    {
+      "defId": "dev.guardian",
+      "star": 2,
+      "col": 3,
+      "row": 4,
+      "items": [],
+      "statOverrides": { "armor": 40 }
+    }
+  ],
+  "rules": { "maxSeconds": 12, "overtime": false }
+}

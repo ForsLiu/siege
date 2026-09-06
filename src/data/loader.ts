@@ -4,9 +4,10 @@ import type { Effect, ProjectileDef } from '../sim/effects.ts';
 import { canonicalJson } from '../sim/hash.ts';
 import { inBounds, isPlayerCell, type BoardConfig } from '../sim/hex.ts';
 import type { Content, Encounter, Rules } from '../sim/rules.ts';
+import type { SandboxSetup } from '../sim/sandbox.ts';
 import type { BoardUnit, UnitDef } from '../sim/units.ts';
 import { sha256Hex } from './sha256.ts';
-import { BoardConfigSchema, BoardFileSchema, EncountersFileSchema, FILE_SCHEMAS, RulesSchema, UnitsFileSchema, type DataFileKind } from './schemas.ts';
+import { BoardConfigSchema, BoardFileSchema, EncountersFileSchema, FILE_SCHEMAS, RulesSchema, SandboxSetupFileSchema, UnitsFileSchema, type DataFileKind } from './schemas.ts';
 
 export interface RawContentFiles {
   board: unknown;
@@ -155,4 +156,13 @@ export function loadBoardFile(file: string, raw: unknown, content: Content): Boa
   const parsed = parseOrThrow<{ units: BoardUnit[] }>(file, BoardFileSchema, raw);
   checkBoardUnits(file, parsed.units, content.board, content.unitsById, content.rules.economy.maxStar);
   return parsed.units;
+}
+
+/** Load a `SandboxSetup` (P0-17): each side is authored in owner-half coordinates, like a
+ *  fight board, and checked the same way; `items`/`statOverrides` need no board-shape check. */
+export function loadSandboxSetupFile(file: string, raw: unknown, content: Content): SandboxSetup {
+  const parsed = parseOrThrow<SandboxSetup & { _provisional?: string }>(file, SandboxSetupFileSchema, raw);
+  checkBoardUnits(file, parsed.left, content.board, content.unitsById, content.rules.economy.maxStar);
+  checkBoardUnits(file, parsed.right, content.board, content.unitsById, content.rules.economy.maxStar);
+  return { left: parsed.left, right: parsed.right, rules: parsed.rules };
 }
