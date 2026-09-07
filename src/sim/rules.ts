@@ -1,6 +1,7 @@
 // Rule/content shapes the sim consumes. Values come from /data (validated by src/data).
 import type { Effect, ProjectileDef } from './effects.ts';
 import type { BoardConfig } from './hex.ts';
+import type { TraitDef } from './traits.ts';
 import type { BoardUnit, UnitDef } from './units.ts';
 
 export interface CombatRules {
@@ -95,6 +96,7 @@ export interface FightRules {
   board: BoardConfig;
   units: Record<string, UnitDef>;
   projectiles: Record<string, ProjectileDef>;
+  traits: Record<string, TraitDef>;
   /**
    * Dev cheat (`dev:invinciblePieces`): damage cannot take a side's units below 1 hp.
    * Absent in production runs; it is an argument like any other, so fights stay pure and
@@ -121,6 +123,8 @@ export interface Content {
   encounters: Encounter[];
   augments: AugmentDef[];
   augmentsById: Record<string, AugmentDef>;
+  traits: TraitDef[];
+  traitsById: Record<string, TraitDef>;
   /** sha-256 of the canonical concatenation of every content file. */
   contentHash: string;
 }
@@ -132,5 +136,6 @@ export function fightRulesFrom(content: Content): FightRules {
     board: content.board,
     units: content.unitsById,
     projectiles: content.projectilesById,
+    traits: content.traitsById,
   };
 }

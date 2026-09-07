@@ -6,6 +6,7 @@ import { DATA_DIR, loadContentFromDisk, readRawContent } from '../src/data/node.
 import type { ProjectileDef } from '../src/sim/effects.ts';
 import type { Content, FightRules } from '../src/sim/rules.ts';
 import type { StatBlock } from '../src/sim/stats.ts';
+import type { TraitDef } from '../src/sim/traits.ts';
 import type { BoardUnit, UnitDef } from '../src/sim/units.ts';
 
 export function devContent(): Content {
@@ -52,6 +53,7 @@ export function testUnit(id: string, stats: Partial<StatBlock>, extra: Partial<U
     ability: null,
     hooks: {},
     aura: null,
+    traits: [],
     ...extra,
   };
 }
@@ -62,10 +64,10 @@ function projectilesById(list: readonly ProjectileDef[]): Record<string, Project
   return by;
 }
 
-/** Fight rules built from dev content, with a custom unit registry (and optional projectiles). */
-export function rulesWithUnits(units: UnitDef[], overrides: Partial<FightRules['combat']> = {}, projectiles?: readonly ProjectileDef[]): FightRules {
+/** Fight rules built from dev content, with a custom unit registry (and optional projectiles/traits). */
+export function rulesWithUnits(units: UnitDef[], overrides: Partial<FightRules['combat']> = {}, projectiles?: readonly ProjectileDef[], traits: Record<string, TraitDef> = {}): FightRules {
   const c = devContent();
   const byId: Record<string, UnitDef> = {};
   for (const u of units) byId[u.id] = u;
-  return { tickRate: c.rules.tickRate, combat: { ...c.rules.combat, ...overrides }, board: c.board, units: byId, projectiles: projectilesById(projectiles ?? c.projectiles) };
+  return { tickRate: c.rules.tickRate, combat: { ...c.rules.combat, ...overrides }, board: c.board, units: byId, projectiles: projectilesById(projectiles ?? c.projectiles), traits };
 }

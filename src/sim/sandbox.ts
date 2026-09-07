@@ -99,6 +99,7 @@ export function buildSandboxFight(content: Content, setup: SandboxSetup): Sandbo
     board: content.board,
     units: { ...l.defs, ...r.defs },
     projectiles: content.projectilesById,
+    traits: content.traitsById,
   };
   const owners = new Map([...l.owners, ...r.owners]);
   return { left: l.boardUnits, right: r.boardUnits, rules, owners };

@@ -9,6 +9,7 @@ import type { AugmentDef, Encounter, Rules } from '../sim/rules.ts';
 import type { SandboxRuleOverrides, SandboxUnit } from '../sim/sandbox.ts';
 import { STAT_KIND, STAT_MAX, STAT_NAMES } from '../sim/stats.ts';
 import type { StatBlock } from '../sim/stats.ts';
+import type { TraitBreakpoint, TraitDef } from '../sim/traits.ts';
 import type { BoardUnit, UnitDef } from '../sim/units.ts';
 
 const provisional = z.string().optional();
@@ -101,7 +102,9 @@ export const UnitDefSchema = z.strictObject({
   ability: z.strictObject({ name: z.string().min(1), effects: z.array(EffectSchema) }).nullable(),
   hooks: HooksSchema,
   aura: AuraSchema.nullable().default(null),
-  // EXTENSION POINTS (SPEC): traits: z.array(TraitId), itemSlots, ...
+  /** Trait ids (P0-25); referential integrity against `Content.traitsById` is a loader check. */
+  traits: z.array(z.string().regex(/^[a-z0-9_.-]+$/)).default([]),
+  // EXTENSION POINTS (SPEC): itemSlots, ...
 }) satisfies z.ZodType<UnitDef>;
 
 export const UnitsFileSchema = z.strictObject({
@@ -156,6 +159,29 @@ export const AugmentDefSchema = z.strictObject({
 export const AugmentsFileSchema = z.strictObject({
   _provisional: provisional,
   augments: z.array(AugmentDefSchema).min(1),
+});
+
+export const TraitBreakpointSchema = z.strictObject({
+  count: posInt,
+  effects: z.array(EffectSchema).min(1),
+}) satisfies z.ZodType<TraitBreakpoint>;
+
+export const TraitDefSchema = z
+  .strictObject({
+    id: z.string().regex(/^[a-z0-9_.-]+$/),
+    name: z.string().min(1),
+    description: z.string().min(1),
+    teamWide: z.boolean(),
+    breakpoints: z.array(TraitBreakpointSchema).min(1),
+  })
+  .refine((t) => t.breakpoints.every((bp, i) => i === 0 || bp.count > (t.breakpoints[i - 1] as { count: number }).count), {
+    message: 'breakpoints must have strictly increasing counts',
+    path: ['breakpoints'],
+  }) satisfies z.ZodType<TraitDef>;
+
+export const TraitsFileSchema = z.strictObject({
+  _provisional: provisional,
+  traits: z.array(TraitDefSchema).min(1),
 });
 
 /** Direct per-stat overrides for a sandbox unit; each field keeps StatBlockSchema's own bound. */
@@ -245,6 +271,7 @@ export type EncountersFile = z.infer<typeof EncountersFileSchema>;
 export type BoardFile = z.infer<typeof BoardFileSchema>;
 export type RulesFile = z.infer<typeof RulesSchema>;
 export type AugmentsFile = z.infer<typeof AugmentsFileSchema>;
+export type TraitsFile = z.infer<typeof TraitsFileSchema>;
 
 /** Logical data files and the schema that validates each. */
 export const FILE_SCHEMAS = {
@@ -253,6 +280,7 @@ export const FILE_SCHEMAS = {
   units: UnitsFileSchema,
   encounters: EncountersFileSchema,
   augments: AugmentsFileSchema,
+  traits: TraitsFileSchema,
   boardFile: BoardFileSchema,
   sandboxSetupFile: SandboxSetupFileSchema,
 } as const;

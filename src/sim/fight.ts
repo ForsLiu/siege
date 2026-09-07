@@ -7,6 +7,7 @@ import { bfsPath, cellIndex, floodDistances, hexDistance, indexToCell, mirrorCel
 import { Rng } from './rng.ts';
 import type { FightRules } from './rules.ts';
 import type { Modifier, StatName } from './stats.ts';
+import { activeTraits } from './traits.ts';
 import { baseStats, getStat, invalidateStats, type BoardUnit, type StatCarrier, type UnitDef } from './units.ts';
 
 export type Team = 0 | 1;
@@ -700,6 +701,18 @@ class FightSim implements EffectHost<FightUnit> {
     let reason: FightEndReason = 'timeout';
     let ticks = maxTicks;
     this.tick = 0;
+    // Trait breakpoints (P0-25): a pure function of each side's own board composition, so both
+    // sides can have active traits (an encounter board is a board like any other). Authored
+    // `target: 'self'` for the same reason as augments below — `teamWide` decides which units
+    // receive the reached breakpoint's effects (every ally, or holders only), not the target
+    // selector itself.
+    for (const team of [0, 1] as const) {
+      const teamUnits = this.units.filter((u) => u.team === team);
+      for (const trait of activeTraits(teamUnits, this.rules.units, this.rules.traits)) {
+        const targets = trait.teamWide ? teamUnits : teamUnits.filter((u) => trait.holderDefIds.includes(u.defId));
+        for (const u of targets) runEffects(this, trait.breakpoint.effects, u, null, `trait:${trait.traitId}`);
+      }
+    }
     // Picked-augment effects (P0-24) are a run-level loadout, not a unit ability: applied once
     // per unit (authored with `target: 'self'`), before any hook fires, so a `scaling` amount
     // (none in the dev augments today) resolves against each unit's own stats rather than an

@@ -23,7 +23,9 @@ export interface UnitDef {
   hooks: Hooks;
   /** Continuous passive applied to units within range each tick; null = none. */
   aura: AuraDef | null;
-  // Extension points reserved for SPEC content (traits, items, augments) are added to
+  /** Trait ids this unit carries (P0-25); every id must resolve in `Content.traitsById`. */
+  traits: string[];
+  // Extension points reserved for SPEC content (items, augments) are added to
   // the schema and here together when SPEC.md defines them.
 }
 

@@ -1,0 +1,22 @@
+{
+  "_provisional": "Engine sample content. Every value is a placeholder until SPEC.md defines it (see QUESTIONS.md).",
+  "traits": [
+    {
+      "id": "trait.brawn",
+      "name": "Brawn",
+      "description": "Brawn units gain armor as more of them join the team (holders only).",
+      "teamWide": false,
+      "breakpoints": [
+        { "count": 2, "effects": [{ "type": "statMod", "stat": "armor", "mode": "flat", "value": 5, "duration": null, "target": "self" }] },
+        { "count": 4, "effects": [{ "type": "statMod", "stat": "armor", "mode": "flat", "value": 10, "duration": null, "target": "self" }] }
+      ]
+    },
+    {
+      "id": "trait.arcane",
+      "name": "Arcane",
+      "description": "The whole team gains ability power once enough Arcane units join.",
+      "teamWide": true,
+      "breakpoints": [{ "count": 2, "effects": [{ "type": "statMod", "stat": "abilityPower", "mode": "flat", "value": 20, "duration": null, "target": "self" }] }]
+    }
+  ]
+}

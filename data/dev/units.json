@@ -2,7 +2,7 @@
   "_provisional": "Engine sample units. Placeholder content for engine tests only; not game design.",
   "units": [
     {
-      "id": "dev.brawler", "name": "Dev Brawler", "cost": 1, "attackType": "melee", "tags": ["dev"],
+      "id": "dev.brawler", "name": "Dev Brawler", "cost": 1, "attackType": "melee", "tags": ["dev"], "traits": ["trait.brawn"],
       "stats": [
         { "hp": 500, "attack": 50, "attackSpeed": 0.7, "armor": 30, "magicResist": 30, "range": 1, "maxMana": 60, "startMana": 0, "abilityPower": 100 },
         { "hp": 900, "attack": 90, "attackSpeed": 0.7, "armor": 30, "magicResist": 30, "range": 1, "maxMana": 60, "startMana": 0, "abilityPower": 100 },
@@ -27,7 +27,7 @@
       "hooks": {}
     },
     {
-      "id": "dev.mage", "name": "Dev Mage", "cost": 2, "attackType": "ranged", "tags": ["dev"],
+      "id": "dev.mage", "name": "Dev Mage", "cost": 2, "attackType": "ranged", "tags": ["dev"], "traits": ["trait.arcane"],
       "stats": [
         { "hp": 450, "attack": 40, "attackSpeed": 0.65, "armor": 15, "magicResist": 20, "range": 3, "maxMana": 70, "startMana": 20, "abilityPower": 100 },
         { "hp": 810, "attack": 72, "attackSpeed": 0.65, "armor": 15, "magicResist": 20, "range": 3, "maxMana": 70, "startMana": 20, "abilityPower": 100 },
@@ -39,7 +39,7 @@
       "hooks": {}
     },
     {
-      "id": "dev.guardian", "name": "Dev Guardian", "cost": 2, "attackType": "melee", "tags": ["dev"],
+      "id": "dev.guardian", "name": "Dev Guardian", "cost": 2, "attackType": "melee", "tags": ["dev"], "traits": ["trait.brawn"],
       "stats": [
         { "hp": 750, "attack": 45, "attackSpeed": 0.6, "armor": 45, "magicResist": 45, "range": 1, "maxMana": 80, "startMana": 30, "abilityPower": 100 },
         { "hp": 1350, "attack": 81, "attackSpeed": 0.6, "armor": 45, "magicResist": 45, "range": 1, "maxMana": 80, "startMana": 30, "abilityPower": 100 },
@@ -52,7 +52,7 @@
       "hooks": { "onCombatStart": [ { "type": "statMod", "stat": "hp", "mode": "mul", "value": 0.1, "duration": null, "target": "self" } ] }
     },
     {
-      "id": "dev.healer", "name": "Dev Healer", "cost": 3, "attackType": "ranged", "tags": ["dev"],
+      "id": "dev.healer", "name": "Dev Healer", "cost": 3, "attackType": "ranged", "tags": ["dev"], "traits": ["trait.arcane"],
       "stats": [
         { "hp": 550, "attack": 35, "attackSpeed": 0.7, "armor": 20, "magicResist": 30, "range": 3, "maxMana": 60, "startMana": 10, "abilityPower": 100 },
         { "hp": 990, "attack": 63, "attackSpeed": 0.7, "armor": 20, "magicResist": 30, "range": 3, "maxMana": 60, "startMana": 10, "abilityPower": 100 },
@@ -77,7 +77,7 @@
       "hooks": { "onKill": [ { "type": "heal", "amount": 100, "target": "self" } ] }
     },
     {
-      "id": "dev.knight", "name": "Dev Knight", "cost": 4, "attackType": "melee", "tags": ["dev"],
+      "id": "dev.knight", "name": "Dev Knight", "cost": 4, "attackType": "melee", "tags": ["dev"], "traits": ["trait.brawn"],
       "stats": [
         { "hp": 950, "attack": 80, "attackSpeed": 0.75, "armor": 50, "magicResist": 40, "range": 1, "maxMana": 90, "startMana": 40, "abilityPower": 100 },
         { "hp": 1710, "attack": 144, "attackSpeed": 0.75, "armor": 50, "magicResist": 40, "range": 1, "maxMana": 90, "startMana": 40, "abilityPower": 100 },
@@ -89,7 +89,7 @@
       "hooks": { "onHit": [ { "type": "heal", "amount": 10, "target": "self" } ] }
     },
     {
-      "id": "dev.titan", "name": "Dev Titan", "cost": 5, "attackType": "melee", "tags": ["dev"],
+      "id": "dev.titan", "name": "Dev Titan", "cost": 5, "attackType": "melee", "tags": ["dev"], "traits": ["trait.brawn"],
       "stats": [
         { "hp": 1400, "attack": 110, "attackSpeed": 0.8, "armor": 60, "magicResist": 60, "range": 1, "maxMana": 100, "startMana": 50, "abilityPower": 100 },
         { "hp": 2520, "attack": 198, "attackSpeed": 0.8, "armor": 60, "magicResist": 60, "range": 1, "maxMana": 100, "startMana": 50, "abilityPower": 100 },

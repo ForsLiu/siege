@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeContentHash, loadContent, validateFile, type RawContentFiles } from '../src/data/loader.ts';
 import { kindForPath } from '../src/data/manifest.ts';
-import { AugmentDefSchema, EffectSchema, EncounterSchema, StatBlockSchema, UnitDefSchema } from '../src/data/schemas.ts';
+import { AugmentDefSchema, EffectSchema, EncounterSchema, StatBlockSchema, TraitDefSchema, UnitDefSchema } from '../src/data/schemas.ts';
 import { devContent, rawDevContent } from './helpers.ts';
 
 function clone<T>(v: T): T {
@@ -15,7 +15,7 @@ describe('data pipeline', () => {
     expect(c.encounters.length).toBeGreaterThan(0);
     expect(c.contentHash).toMatch(/^[0-9a-f]{64}$/);
     const raw = rawDevContent();
-    for (const kind of ['board', 'rules', 'units', 'encounters', 'augments'] as const) expect(validateFile(kind, raw[kind]).ok, kind).toBe(true);
+    for (const kind of ['board', 'rules', 'units', 'encounters', 'augments', 'traits'] as const) expect(validateFile(kind, raw[kind]).ok, kind).toBe(true);
   });
 
   it('rejects unknown keys', () => {
@@ -110,6 +110,34 @@ describe('data pipeline', () => {
     expect(AugmentDefSchema.safeParse({ id: 'x', name: 'x', description: 'x', effects: [] }).success).toBe(false);
     expect(AugmentDefSchema.safeParse({ id: 'Not An Id', name: 'x', description: 'x', effects: [{ type: 'heal', amount: 1, target: 'allies' }] }).success).toBe(false);
     expect(AugmentDefSchema.safeParse({ id: 'x', name: 'x', description: 'x', effects: [{ type: 'explode', amount: 1, target: 'allies' }] }).success).toBe(false);
+  });
+
+  it('traits (P0-25): a unit referencing an unknown trait is rejected; duplicate id, unknown projectile ref and malformed breakpoints are all rejected', () => {
+    const base = rawDevContent();
+
+    const badUnit = clone(base);
+    (badUnit.units as { units: { traits: string[] }[] }).units[0]!.traits = ['trait.does_not_exist'];
+    expect(() => loadContent(badUnit)).toThrow(/unknown trait/);
+
+    const dupOnUnit = clone(base);
+    const firstTraitId = (base.traits as { traits: { id: string }[] }).traits[0]!.id;
+    (dupOnUnit.units as { units: { traits: string[] }[] }).units[0]!.traits = [firstTraitId, firstTraitId];
+    expect(() => loadContent(dupOnUnit)).toThrow(/more than once/);
+
+    const dup = clone(base);
+    const traits = (dup.traits as { traits: { id: string }[] }).traits;
+    traits.push({ ...traits[0]! });
+    expect(() => loadContent(dup)).toThrow(/duplicate trait id/);
+
+    const badRef = clone(base);
+    (badRef.traits as { traits: { breakpoints: { effects: unknown[] }[] }[] }).traits[0]!.breakpoints[0]!.effects = [{ type: 'spawnProjectile', ref: 'ghost.does.not.exist', target: 'self' }];
+    expect(() => loadContent(badRef)).toThrow(/unknown projectile ref/);
+
+    const validBreakpoint = { count: 2, effects: [{ type: 'statMod', stat: 'armor', mode: 'flat', value: 1, duration: null, target: 'self' }] };
+    expect(TraitDefSchema.safeParse({ id: 'x', name: 'x', description: 'x', teamWide: false, breakpoints: [] }).success).toBe(false);
+    expect(TraitDefSchema.safeParse({ id: 'x', name: 'x', description: 'x', teamWide: false, breakpoints: [validBreakpoint, validBreakpoint] }).success).toBe(false); // equal counts, not strictly increasing
+    expect(TraitDefSchema.safeParse({ id: 'x', name: 'x', description: 'x', teamWide: false, breakpoints: [{ ...validBreakpoint, count: 4 }, validBreakpoint] }).success).toBe(false); // decreasing
+    expect(TraitDefSchema.safeParse({ id: 'x', name: 'x', description: 'x', teamWide: false, breakpoints: [validBreakpoint] }).success).toBe(true);
   });
 
   it('content hash is stable across key order and whitespace and changes when a value changes', () => {

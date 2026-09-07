@@ -14,6 +14,7 @@ export const CONTENT_MANIFEST: readonly ContentManifestEntry[] = [
   { kind: 'units', path: 'dev/units.json' },
   { kind: 'encounters', path: 'dev/encounters.json' },
   { kind: 'augments', path: 'dev/augments.json' },
+  { kind: 'traits', path: 'dev/traits.json' },
 ];
 
 /** Dev boards selectable on the Title screen's "Dev fight" entry. */

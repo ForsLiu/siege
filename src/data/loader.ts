@@ -5,9 +5,10 @@ import { canonicalJson } from '../sim/hash.ts';
 import { inBounds, isPlayerCell, type BoardConfig } from '../sim/hex.ts';
 import type { AugmentDef, Content, Encounter, Rules } from '../sim/rules.ts';
 import type { SandboxSetup } from '../sim/sandbox.ts';
+import type { TraitDef } from '../sim/traits.ts';
 import type { BoardUnit, UnitDef } from '../sim/units.ts';
 import { sha256Hex } from './sha256.ts';
-import { AugmentsFileSchema, BoardConfigSchema, BoardFileSchema, EncountersFileSchema, FILE_SCHEMAS, RulesSchema, SandboxSetupFileSchema, UnitsFileSchema, type DataFileKind } from './schemas.ts';
+import { AugmentsFileSchema, BoardConfigSchema, BoardFileSchema, EncountersFileSchema, FILE_SCHEMAS, RulesSchema, SandboxSetupFileSchema, TraitsFileSchema, UnitsFileSchema, type DataFileKind } from './schemas.ts';
 
 export interface RawContentFiles {
   board: unknown;
@@ -15,6 +16,7 @@ export interface RawContentFiles {
   units: unknown;
   encounters: unknown;
   augments: unknown;
+  traits: unknown;
 }
 
 export class ContentError extends Error {
@@ -75,6 +77,7 @@ export function loadContent(raw: RawContentFiles): Content {
   const unitsFile = parseOrThrow<{ units: UnitDef[]; projectiles: ProjectileDef[] }>('units', UnitsFileSchema, raw.units);
   const encFile = parseOrThrow<{ encounters: Encounter[] }>('encounters', EncountersFileSchema, raw.encounters);
   const augmentsFile = parseOrThrow<{ augments: AugmentDef[] }>('augments', AugmentsFileSchema, raw.augments);
+  const traitsFile = parseOrThrow<{ traits: TraitDef[] }>('traits', TraitsFileSchema, raw.traits);
 
   const tierKeys = Object.keys(rules.economy.poolSize)
     .map((k) => Number.parseInt(k, 10))
@@ -90,12 +93,23 @@ export function loadContent(raw: RawContentFiles): Content {
     if (!((rules.economy.xpToLevel[lvl] ?? 0) > 0)) throw new ContentError('rules', `xpToLevel[${lvl}] must be positive (free level-ups otherwise)`);
   }
 
+  const traits = [...traitsFile.traits].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const traitsById: Record<string, TraitDef> = {};
+  for (const t of traits) {
+    if (traitsById[t.id]) throw new ContentError('traits', `duplicate trait id ${t.id}`);
+    traitsById[t.id] = t;
+  }
+
   const units = [...unitsFile.units].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const unitsById: Record<string, UnitDef> = {};
   for (const u of units) {
     if (unitsById[u.id]) throw new ContentError('units', `duplicate unit id ${u.id}`);
     if (u.stats.length !== rules.economy.maxStar) throw new ContentError('units', `${u.id}: expected ${rules.economy.maxStar} stat blocks, got ${u.stats.length}`);
     if (rules.economy.poolSize[String(u.cost)] === undefined) throw new ContentError('units', `${u.id}: cost ${u.cost} has no poolSize entry`);
+    if (new Set(u.traits).size !== u.traits.length) throw new ContentError('units', `${u.id}: lists a trait more than once`);
+    for (const traitId of u.traits) {
+      if (!traitsById[traitId]) throw new ContentError('units', `${u.id}: unknown trait ${traitId}`);
+    }
     unitsById[u.id] = u;
   }
 
@@ -147,8 +161,16 @@ export function loadContent(raw: RawContentFiles): Content {
     }
   }
 
-  const contentHash = computeContentHash({ board: raw.board, rules: raw.rules, units: raw.units, encounters: raw.encounters, augments: raw.augments });
-  return { board, rules, units, unitsById, projectiles, projectilesById, encounters, augments, augmentsById, contentHash };
+  for (const t of traits) {
+    for (const bp of t.breakpoints) {
+      for (const ref of projectileRefs(bp.effects)) {
+        if (!projectilesById[ref]) throw new ContentError('traits', `trait ${t.id}: unknown projectile ref ${ref}`);
+      }
+    }
+  }
+
+  const contentHash = computeContentHash({ board: raw.board, rules: raw.rules, units: raw.units, encounters: raw.encounters, augments: raw.augments, traits: raw.traits });
+  return { board, rules, units, unitsById, projectiles, projectilesById, encounters, augments, augmentsById, traits, traitsById, contentHash };
 }
 
 /** Every effect a unit can run: its ability, all its hooks and its aura. */
