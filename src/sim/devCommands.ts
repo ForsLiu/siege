@@ -59,9 +59,9 @@ export function isDevCommand<T extends { type: string }>(cmd: T): cmd is T & Dev
 }
 
 /**
- * Ids for augments and items are free-form until P0-24 / P0-27 define the content
- * (QUESTIONS.md P0-15-03). This is an input bound, not a tuning number: TODO drop it once
- * those items replace the shape check with a lookup in their content tables.
+ * Item ids are free-form until P0-27 defines the content (QUESTIONS.md P0-15-03); `dev:spawnUnit`
+ * also uses this as a pre-filter before its real `unitsById` lookup. An input bound, not a
+ * tuning number: TODO drop the item-id use once P0-27 replaces the shape check with a lookup.
  */
 const MAX_ID_LENGTH = 64;
 
@@ -105,8 +105,7 @@ export function validateDevCommand(state: RunState, cmd: DevCommand, content: Co
       if (!currentEncounter(state, content)) return `no encounter for round ${state.round}`;
       return null;
     case 'dev:addAugment':
-      // P0-24 replaces this with a lookup in the augment table.
-      if (!isId(cmd.augmentId)) return 'invalid augment id';
+      if (!Object.hasOwn(content.augmentsById, cmd.augmentId)) return `unknown augment id ${String(cmd.augmentId)}`;
       return null;
     case 'dev:openShop': {
       const tiers = shopTierCount(content);

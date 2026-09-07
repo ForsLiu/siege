@@ -25,7 +25,7 @@ const SAMPLE: Record<string, DevCommand> = {
   'dev:invinciblePieces': { type: 'dev:invinciblePieces', on: true },
   'dev:invinciblePlayer': { type: 'dev:invinciblePlayer', on: true },
   'dev:skipRound': { type: 'dev:skipRound' },
-  'dev:addAugment': { type: 'dev:addAugment', augmentId: 'dev.aug.test' },
+  'dev:addAugment': { type: 'dev:addAugment', augmentId: 'aug.iron_skin' },
   'dev:openShop': { type: 'dev:openShop', tier: 1 },
   'dev:spawnUnit': { type: 'dev:spawnUnit', defId: 'dev.brawler', star: 1, cell: null },
   'dev:giveItem': { type: 'dev:giveItem', itemId: 'dev.item.test' },
@@ -203,15 +203,16 @@ describe('dev:skipRound', () => {
 describe('dev:addAugment / dev:giveItem', () => {
   it('records the granted ids in state', () => {
     const s = devRun();
-    expect(applyCommand(s, { type: 'dev:addAugment', augmentId: 'dev.aug.a' }, content).ok).toBe(true);
-    expect(applyCommand(s, { type: 'dev:addAugment', augmentId: 'dev.aug.b' }, content).ok).toBe(true);
-    expect(s.augments).toEqual(['dev.aug.a', 'dev.aug.b']);
+    expect(applyCommand(s, { type: 'dev:addAugment', augmentId: 'aug.iron_skin' }, content).ok).toBe(true);
+    expect(applyCommand(s, { type: 'dev:addAugment', augmentId: 'aug.quickness' }, content).ok).toBe(true);
+    expect(s.augments).toEqual(['aug.iron_skin', 'aug.quickness']);
     expect(applyCommand(s, { type: 'dev:giveItem', itemId: 'dev.item.a' }, content).ok).toBe(true);
     expect(s.itemBench).toEqual(['dev.item.a']);
   });
-  it('rejects an empty or oversized id', () => {
+  it('rejects an unknown augment id and an empty or oversized item id', () => {
     const s = devRun();
-    expectRejected(s, { type: 'dev:addAugment', augmentId: '' }, /invalid augment id/);
+    expectRejected(s, { type: 'dev:addAugment', augmentId: '' }, /unknown augment id/);
+    expectRejected(s, { type: 'dev:addAugment', augmentId: 'aug.does_not_exist' }, /unknown augment id/);
     expectRejected(s, { type: 'dev:giveItem', itemId: 'x'.repeat(65) }, /invalid item id/);
   });
 });
@@ -322,7 +323,7 @@ describe('replay with dev commands', () => {
       { type: 'dev:xp', amount: 100 },
       { type: 'dev:openShop', tier: 1 },
       { type: 'dev:spawnUnit', defId: 'dev.guardian', star: 2, cell: { col: 3, row: 7 } },
-      { type: 'dev:addAugment', augmentId: 'dev.aug.x' },
+      { type: 'dev:addAugment', augmentId: 'aug.iron_skin' },
       { type: 'dev:giveItem', itemId: 'dev.item.x' },
       { type: 'dev:invinciblePieces', on: true },
       { type: 'startCombat' },

@@ -3,17 +3,18 @@
 import type { Effect, ProjectileDef } from '../sim/effects.ts';
 import { canonicalJson } from '../sim/hash.ts';
 import { inBounds, isPlayerCell, type BoardConfig } from '../sim/hex.ts';
-import type { Content, Encounter, Rules } from '../sim/rules.ts';
+import type { AugmentDef, Content, Encounter, Rules } from '../sim/rules.ts';
 import type { SandboxSetup } from '../sim/sandbox.ts';
 import type { BoardUnit, UnitDef } from '../sim/units.ts';
 import { sha256Hex } from './sha256.ts';
-import { BoardConfigSchema, BoardFileSchema, EncountersFileSchema, FILE_SCHEMAS, RulesSchema, SandboxSetupFileSchema, UnitsFileSchema, type DataFileKind } from './schemas.ts';
+import { AugmentsFileSchema, BoardConfigSchema, BoardFileSchema, EncountersFileSchema, FILE_SCHEMAS, RulesSchema, SandboxSetupFileSchema, UnitsFileSchema, type DataFileKind } from './schemas.ts';
 
 export interface RawContentFiles {
   board: unknown;
   rules: unknown;
   units: unknown;
   encounters: unknown;
+  augments: unknown;
 }
 
 export class ContentError extends Error {
@@ -73,6 +74,7 @@ export function loadContent(raw: RawContentFiles): Content {
   const rules = parseOrThrow<Rules>('rules', RulesSchema, raw.rules);
   const unitsFile = parseOrThrow<{ units: UnitDef[]; projectiles: ProjectileDef[] }>('units', UnitsFileSchema, raw.units);
   const encFile = parseOrThrow<{ encounters: Encounter[] }>('encounters', EncountersFileSchema, raw.encounters);
+  const augmentsFile = parseOrThrow<{ augments: AugmentDef[] }>('augments', AugmentsFileSchema, raw.augments);
 
   const tierKeys = Object.keys(rules.economy.poolSize)
     .map((k) => Number.parseInt(k, 10))
@@ -133,8 +135,20 @@ export function loadContent(raw: RawContentFiles): Content {
     checkBoardUnits(`encounters[${e.id}]`, e.board, board, unitsById, rules.economy.maxStar);
   });
 
-  const contentHash = computeContentHash({ board: raw.board, rules: raw.rules, units: raw.units, encounters: raw.encounters });
-  return { board, rules, units, unitsById, projectiles, projectilesById, encounters, contentHash };
+  const augments = [...augmentsFile.augments].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const augmentsById: Record<string, AugmentDef> = {};
+  for (const a of augments) {
+    if (augmentsById[a.id]) throw new ContentError('augments', `duplicate augment id ${a.id}`);
+    augmentsById[a.id] = a;
+  }
+  for (const a of augments) {
+    for (const ref of projectileRefs(a.effects)) {
+      if (!projectilesById[ref]) throw new ContentError('augments', `augment ${a.id}: unknown projectile ref ${ref}`);
+    }
+  }
+
+  const contentHash = computeContentHash({ board: raw.board, rules: raw.rules, units: raw.units, encounters: raw.encounters, augments: raw.augments });
+  return { board, rules, units, unitsById, projectiles, projectilesById, encounters, augments, augmentsById, contentHash };
 }
 
 /** Every effect a unit can run: its ability, all its hooks and its aura. */

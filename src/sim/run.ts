@@ -3,7 +3,7 @@
 import { fight, type FightEndReason, type FightWinner } from './fight.ts';
 import { hashValue } from './hash.ts';
 import { createRngStates, Rng, type RngStates, type StreamName } from './rng.ts';
-import { fightRulesFrom, type Content, type Encounter, type EncounterType } from './rules.ts';
+import { fightRulesFrom, type Content, type Encounter, type EncounterType, type FightRules } from './rules.ts';
 import type { BoardUnit, OwnedUnit, PlacedUnit } from './units.ts';
 
 export type Phase = 'planning' | 'combat' | 'reward' | 'ended';
@@ -91,8 +91,10 @@ export interface RunState {
   outcome: Outcome | null;
   endReason: EndReason | null;
   history: RoundRecord[];
-  /** Augment ids granted so far; `dev:addAugment` writes here until P0-24 owns it. */
+  /** Augment ids granted so far, applied at the start of every combat from here on. */
   augments: string[];
+  /** Ids offered on the current `augment`-type round; null when none is pending. */
+  augmentOffer: string[] | null;
   /** Item ids on the item bench; `dev:giveItem` writes here until P0-27 owns it. */
   itemBench: string[];
   dev: DevFlags;
@@ -140,12 +142,14 @@ export function createRun(seed: number, content: Content, options: RunOptions = 
     endReason: null,
     history: [],
     augments: [],
+    augmentOffer: null,
     itemBench: [],
     dev: { invinciblePieces: false, invinciblePlayer: false },
     hashes: [],
     commandCount: 0,
   };
   refreshShop(state, content);
+  refreshAugmentOffer(state, content);
   state.hashes.push(stateHash(state));
   return state;
 }
@@ -410,6 +414,30 @@ export function refreshShop(state: RunState, content: Content, tier?: number): v
   });
 }
 
+// ---- augments ----
+
+/** Deterministically draw `rules.augment.offerCount` distinct augment ids from `content.augments`
+ *  via the `augment` RNG stream (fewer if the pool is smaller): a full shuffle then take-n, so it
+ *  shares `Rng`'s one Fisher-Yates implementation instead of a second hand-rolled partial one. */
+export function drawAugmentOffer(state: RunState, content: Content): string[] {
+  const n = content.rules.augment.offerCount;
+  return withRng(state, 'augment', (rng) => rng.shuffle([...content.augments]).slice(0, n).map((a) => a.id));
+}
+
+/** Sets or clears `state.augmentOffer` for the round the state is currently on: an offer is
+ *  drawn exactly on an `augment`-type round, replacing whatever was pending before. */
+export function refreshAugmentOffer(state: RunState, content: Content): void {
+  const encounter = currentEncounter(state, content);
+  state.augmentOffer = encounter?.type === 'augment' ? drawAugmentOffer(state, content) : null;
+}
+
+/** The picked augments' effects, per side, ready for `FightRules.startEffects` — empty on the
+ *  side with nothing picked, so a run with no augments behaves exactly as before P0-24. */
+export function augmentStartEffects(state: RunState, content: Content): FightRules['startEffects'] {
+  const left = state.augments.flatMap((id) => content.augmentsById[id]?.effects ?? []);
+  return { left, right: [] };
+}
+
 // ---- units on bench / board ----
 
 export function findUnit(state: RunState, uid: number): { unit: OwnedUnit; where: 'board'; index: number } | { unit: OwnedUnit; where: 'bench'; index: number } | null {
@@ -501,6 +529,7 @@ export function resolveCombat(state: RunState, content: Content): CombatOutcome 
   const rules = fightRulesFrom(content);
   // dev:invinciblePieces keeps the player's units above 0 hp for this fight (dev builds only).
   if (state.dev.invinciblePieces) rules.invincible = { left: true, right: false };
+  if (state.augments.length > 0) rules.startEffects = augmentStartEffects(state, content);
   const result = fight(left, encounter.board, seed, rules);
   const won = result.winner === 'left';
   const lostForHp = result.winner === 'right' || (result.winner === 'draw' && content.rules.combat.drawCountsAsLoss);
@@ -590,5 +619,6 @@ export function advanceRound(state: RunState, content: Content): void {
   state.round++;
   state.phase = 'planning';
   refreshShop(state, content);
+  refreshAugmentOffer(state, content);
   state.hashes.push(stateHash(state));
 }

@@ -5,7 +5,7 @@ import { DAMAGE_KINDS, HOOK_NAMES, TARGET_SELS } from '../sim/effects.ts';
 import type { AuraDef, AuraEffect, Effect, Hooks, ProjectileDef } from '../sim/effects.ts';
 import type { BoardConfig } from '../sim/hex.ts';
 import { ENCOUNTER_TYPES } from '../sim/rules.ts';
-import type { Encounter, Rules } from '../sim/rules.ts';
+import type { AugmentDef, Encounter, Rules } from '../sim/rules.ts';
 import type { SandboxRuleOverrides, SandboxUnit } from '../sim/sandbox.ts';
 import { STAT_KIND, STAT_MAX, STAT_NAMES } from '../sim/stats.ts';
 import type { StatBlock } from '../sim/stats.ts';
@@ -146,6 +146,18 @@ export const EncountersFileSchema = z.strictObject({
   encounters: z.array(EncounterSchema).min(1),
 });
 
+export const AugmentDefSchema = z.strictObject({
+  id: z.string().regex(/^[a-z0-9_.-]+$/),
+  name: z.string().min(1),
+  description: z.string().min(1),
+  effects: z.array(EffectSchema).min(1),
+}) satisfies z.ZodType<AugmentDef>;
+
+export const AugmentsFileSchema = z.strictObject({
+  _provisional: provisional,
+  augments: z.array(AugmentDefSchema).min(1),
+});
+
 /** Direct per-stat overrides for a sandbox unit; each field keeps StatBlockSchema's own bound. */
 export const StatOverridesSchema = StatBlockSchema.partial() satisfies z.ZodType<Partial<StatBlock>>;
 
@@ -214,6 +226,9 @@ export const RulesSchema = z
       byRound: z.array(nonNegInt).min(1),
       perSurvivingUnit: nonNegInt,
     }),
+    augment: z.strictObject({
+      offerCount: posInt,
+    }),
   })
   .superRefine((r, ctx) => {
     const e = r.economy;
@@ -229,6 +244,7 @@ export type UnitsFile = z.infer<typeof UnitsFileSchema>;
 export type EncountersFile = z.infer<typeof EncountersFileSchema>;
 export type BoardFile = z.infer<typeof BoardFileSchema>;
 export type RulesFile = z.infer<typeof RulesSchema>;
+export type AugmentsFile = z.infer<typeof AugmentsFileSchema>;
 
 /** Logical data files and the schema that validates each. */
 export const FILE_SCHEMAS = {
@@ -236,6 +252,7 @@ export const FILE_SCHEMAS = {
   rules: RulesSchema,
   units: UnitsFileSchema,
   encounters: EncountersFileSchema,
+  augments: AugmentsFileSchema,
   boardFile: BoardFileSchema,
   sandboxSetupFile: SandboxSetupFileSchema,
 } as const;

@@ -1,10 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand, checkInvariants, legalCommands, validateCommand, type Command } from '../src/sim/commands.ts';
+import { fight } from '../src/sim/fight.ts';
 import { Rng } from '../src/sim/rng.ts';
-import { createRun, drawUnit, incomePreview, interestFor, poolCapacity, roundTrack, sellValue, shopHudModel, stateHash, xpNeeded, type RunState } from '../src/sim/run.ts';
-import type { OwnedUnit } from '../src/sim/units.ts';
+import {
+  advanceRound,
+  augmentStartEffects,
+  createRun,
+  drawAugmentOffer,
+  drawUnit,
+  incomePreview,
+  interestFor,
+  poolCapacity,
+  roundTrack,
+  sellValue,
+  shopHudModel,
+  skipRoundAsWin,
+  stateHash,
+  xpNeeded,
+  type RunState,
+} from '../src/sim/run.ts';
+import type { BoardUnit, OwnedUnit } from '../src/sim/units.ts';
 import { getPolicy } from '../tools/policies/index.ts';
-import { devContent } from './helpers.ts';
+import { devContent, rulesWithUnits, testUnit } from './helpers.ts';
 
 const content = devContent();
 const eco = content.rules.economy;
@@ -372,6 +389,125 @@ describe('economy arithmetic against rules', () => {
       s.level = eco.maxLevel + 5; // past every explicit shopOdds key
       const model = shopHudModel(s, content);
       expect(model.odds.map((r) => r.percent)).toEqual(eco.shopOdds[String(eco.maxLevel)]);
+    });
+  });
+
+  describe('augments (P0-24)', () => {
+    // Derived, not hardcoded: whichever round content.encounters marks 'augment' (today round 8),
+    // so this suite keeps testing something real if the dev encounter mix ever changes.
+    const augmentRound = content.encounters.find((e) => e.type === 'augment')!.round;
+
+    function toAugmentRound(state: RunState): void {
+      while (state.round < augmentRound) {
+        skipRoundAsWin(state, content);
+        advanceRound(state, content);
+      }
+    }
+
+    it('drawAugmentOffer is deterministic per seed, draws distinct ids up to offerCount, and genuinely excludes when the pool is bigger than the offer', () => {
+      // The dev pool (4 augments) is bigger than offerCount (3), so a real exclusion is exercised
+      // here, not just a full-pool reshuffle (offerCount === pool.length would trivially pass).
+      expect(content.augments.length).toBeGreaterThan(content.rules.augment.offerCount);
+      const a = fresh(11);
+      const b = fresh(11);
+      const offerA = drawAugmentOffer(a, content);
+      const offerB = drawAugmentOffer(b, content);
+      expect(offerA).toEqual(offerB);
+      expect(offerA.length).toBe(content.rules.augment.offerCount);
+      expect(new Set(offerA).size).toBe(offerA.length);
+      for (const id of offerA) expect(content.augmentsById[id]).toBeDefined();
+      expect(offerA.length).toBeLessThan(content.augments.length);
+      const c = fresh(12);
+      expect(drawAugmentOffer(c, content).length).toBe(offerA.length);
+    });
+
+    it('createRun and advanceRound set augmentOffer only on the augment-type round', () => {
+      const s = fresh(3);
+      expect(s.augmentOffer).toBeNull(); // round 1 is 'normal' in dev/encounters.json
+      toAugmentRound(s);
+      expect(s.round).toBe(augmentRound);
+      expect(s.augmentOffer).not.toBeNull();
+      expect(s.augmentOffer).toHaveLength(Math.min(content.rules.augment.offerCount, content.augments.length));
+      skipRoundAsWin(s, content);
+      advanceRound(s, content);
+      expect(s.round).toBe(augmentRound + 1);
+      expect(s.augmentOffer).toBeNull(); // the following round is 'normal' in dev/encounters.json
+    });
+
+    it('pickAugment is rejected outside an augment round, even for a real augment id', () => {
+      const s = fresh(1); // round 1 has no pending offer
+      expect(s.augmentOffer).toBeNull();
+      expectRejected(s, { type: 'pickAugment', augmentId: content.augments[0]!.id }, /no augment offer is pending/);
+    });
+
+    it('pickAugment rejects an unknown augment id even during an augment round', () => {
+      const s = fresh(1);
+      toAugmentRound(s);
+      expectRejected(s, { type: 'pickAugment', augmentId: 'aug.does_not_exist' }, /unknown augment id/);
+    });
+
+    it('pickAugment rejects a real augment id that is not in the current offer', () => {
+      const s = fresh(1);
+      toAugmentRound(s);
+      // Guaranteed to exist: the dev pool (4 augments) is bigger than offerCount (3).
+      const notOffered = content.augments.map((a) => a.id).find((id) => !s.augmentOffer!.includes(id));
+      expect(notOffered, 'expected at least one augment excluded from the offer').toBeDefined();
+      expectRejected(s, { type: 'pickAugment', augmentId: notOffered! }, /not in the current offer/);
+    });
+
+    it('picking records the id, clears the offer, and legalCommands stops offering pickAugment', () => {
+      const s = fresh(1);
+      toAugmentRound(s);
+      const offered = s.augmentOffer![0]!;
+      expect(legalCommands(s, content).some((c) => c.type === 'pickAugment' && c.augmentId === offered)).toBe(true);
+      expect(applyCommand(s, { type: 'pickAugment', augmentId: offered }, content).ok).toBe(true);
+      expect(s.augments).toEqual([offered]);
+      expect(s.augmentOffer).toBeNull();
+      expect(legalCommands(s, content).some((c) => c.type === 'pickAugment')).toBe(false);
+    });
+
+    it("a picked augment's effects apply in the next combat: armor from aug.iron_skin reduces damage taken, called through fight() directly", () => {
+      const attacker = testUnit('t.aug.attacker', { hp: 1000, attack: 100, attackSpeed: 1, range: 1 });
+      const tank = testUnit('t.aug.tank', { hp: 100000, attack: 0, range: 1 });
+      const fr = rulesWithUnits([attacker, tank], { maxSeconds: 1 });
+      const left: BoardUnit[] = [{ defId: 't.aug.attacker', star: 1, col: 3, row: 4 }];
+      const right: BoardUnit[] = [{ defId: 't.aug.tank', star: 1, col: 3, row: 4 }];
+      const withoutAugment = fight(left, right, 1, fr);
+      const hitWithout = withoutAugment.events.find((e) => e.type === 'hit');
+      expect(hitWithout && hitWithout.type === 'hit' ? hitWithout.amount : NaN).toBeCloseTo(100, 9);
+
+      const ironSkin = content.augmentsById['aug.iron_skin']!;
+      const buffed = { ...fr, startEffects: { left: [], right: ironSkin.effects } };
+      const withAugment = fight(left, right, 1, buffed);
+      const hitWith = withAugment.events.find((e) => e.type === 'hit');
+      // K / (K + armor) with K = mitigationConstant (100) and armor = 10 (aug.iron_skin's flat bonus).
+      const k = content.rules.combat.mitigationConstant;
+      expect(hitWith && hitWith.type === 'hit' ? hitWith.amount : NaN).toBeCloseTo(100 * (k / (k + 10)), 9);
+    });
+
+    it("a picked augment's effects apply in the next combat, driven through the real Commands (pickAugment -> startCombat)", () => {
+      const withoutBuff = fresh(9);
+      give(withoutBuff, content.units[0]!.id, 1, 'board');
+      expect(applyCommand(withoutBuff, { type: 'startCombat' }, content).ok).toBe(true);
+      const baselineHash = withoutBuff.lastFight!.hash;
+
+      const withBuff = fresh(9);
+      give(withBuff, content.units[0]!.id, 1, 'board');
+      withBuff.augments.push('aug.iron_skin');
+      expect(applyCommand(withBuff, { type: 'startCombat' }, content).ok).toBe(true);
+      // Same seed, same board, only the picked augment differs: the fight hash must diverge
+      // (the buffed unit's armor is higher, changing mitigation) proving `resolveCombat` actually
+      // threads `state.augments` into the fight it runs, not just that `fight()` can apply effects.
+      expect(withBuff.lastFight!.hash).not.toBe(baselineHash);
+    });
+
+    it('augmentStartEffects reads only the picked augments and always fills both sides', () => {
+      const s = fresh(1);
+      expect(augmentStartEffects(s, content)).toEqual({ left: [], right: [] });
+      s.augments.push('aug.iron_skin', 'aug.quickness');
+      const effects = augmentStartEffects(s, content);
+      expect(effects!.right).toEqual([]);
+      expect(effects!.left).toEqual([...content.augmentsById['aug.iron_skin']!.effects, ...content.augmentsById['aug.quickness']!.effects]);
     });
   });
 

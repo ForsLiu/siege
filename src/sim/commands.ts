@@ -34,6 +34,7 @@ export type PlayerCommand =
   | { type: 'swap'; uidA: number; uidB: number }
   | { type: 'reroll' }
   | { type: 'levelUp' }
+  | { type: 'pickAugment'; augmentId: string }
   | { type: 'startCombat' }
   | { type: 'nextRound' }
   | { type: 'abandon' };
@@ -43,7 +44,7 @@ export type Command = PlayerCommand | DevCommand;
 
 export type PlayerCommandType = PlayerCommand['type'];
 export type CommandType = Command['type'];
-export const COMMAND_TYPES: readonly PlayerCommandType[] = ['buy', 'sell', 'place', 'bench', 'swap', 'reroll', 'levelUp', 'startCombat', 'nextRound', 'abandon'];
+export const COMMAND_TYPES: readonly PlayerCommandType[] = ['buy', 'sell', 'place', 'bench', 'swap', 'reroll', 'levelUp', 'pickAugment', 'startCombat', 'nextRound', 'abandon'];
 
 export type CommandResult = { ok: true; state: RunState; fight: FightResult | null } | { ok: false; reason: string };
 
@@ -121,6 +122,12 @@ export function validateCommand(state: RunState, cmd: Command, content: Content)
       if (state.level >= eco.maxLevel) return 'already at max level';
       if (state.gold < eco.xpCost) return `not enough gold (need ${eco.xpCost}, have ${state.gold})`;
       return null;
+    case 'pickAugment': {
+      if (!Object.hasOwn(content.augmentsById, cmd.augmentId)) return `unknown augment id ${String(cmd.augmentId)}`;
+      if (state.augmentOffer === null) return 'no augment offer is pending';
+      if (!state.augmentOffer.includes(cmd.augmentId)) return `${cmd.augmentId} is not in the current offer`;
+      return null;
+    }
     case 'startCombat':
       return null;
     default: {
@@ -223,6 +230,11 @@ export function applyCommand(state: RunState, cmd: Command, content: Content): C
       addXp(state, eco.xpPerBuy, content);
       return { ok: true, state, fight: null };
     }
+    case 'pickAugment': {
+      state.augments.push(cmd.augmentId);
+      state.augmentOffer = null;
+      return { ok: true, state, fight: null };
+    }
     case 'startCombat': {
       state.phase = 'combat';
       const { result } = resolveCombat(state, content);
@@ -287,6 +299,7 @@ export function legalCommands(state: RunState, content: Content): PlayerCommand[
   }
   if (state.gold >= eco.rerollCost) out.push({ type: 'reroll' });
   if (state.level < eco.maxLevel && state.gold >= eco.xpCost) out.push({ type: 'levelUp' });
+  if (state.augmentOffer) for (const augmentId of state.augmentOffer) out.push({ type: 'pickAugment', augmentId });
   out.push({ type: 'startCombat' });
   return out;
 }

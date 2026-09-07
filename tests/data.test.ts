@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeContentHash, loadContent, validateFile, type RawContentFiles } from '../src/data/loader.ts';
 import { kindForPath } from '../src/data/manifest.ts';
-import { EffectSchema, EncounterSchema, StatBlockSchema, UnitDefSchema } from '../src/data/schemas.ts';
+import { AugmentDefSchema, EffectSchema, EncounterSchema, StatBlockSchema, UnitDefSchema } from '../src/data/schemas.ts';
 import { devContent, rawDevContent } from './helpers.ts';
 
 function clone<T>(v: T): T {
@@ -15,7 +15,7 @@ describe('data pipeline', () => {
     expect(c.encounters.length).toBeGreaterThan(0);
     expect(c.contentHash).toMatch(/^[0-9a-f]{64}$/);
     const raw = rawDevContent();
-    for (const kind of ['board', 'rules', 'units', 'encounters'] as const) expect(validateFile(kind, raw[kind]).ok, kind).toBe(true);
+    for (const kind of ['board', 'rules', 'units', 'encounters', 'augments'] as const) expect(validateFile(kind, raw[kind]).ok, kind).toBe(true);
   });
 
   it('rejects unknown keys', () => {
@@ -93,6 +93,23 @@ describe('data pipeline', () => {
     const freeLevels = clone(base);
     (freeLevels.rules as { economy: { xpToLevel: number[] } }).economy.xpToLevel[2] = 0;
     expect(() => loadContent(freeLevels)).toThrow(/xpToLevel/);
+  });
+
+  it('augments (P0-24): duplicate id and unknown projectile ref are cross-file errors; the schema rejects a malformed row', () => {
+    const base = rawDevContent();
+
+    const dup = clone(base);
+    const augs = (dup.augments as { augments: { id: string }[] }).augments;
+    augs.push({ ...augs[0]! });
+    expect(() => loadContent(dup)).toThrow(/duplicate augment id/);
+
+    const badRef = clone(base);
+    (badRef.augments as { augments: { effects: unknown[] }[] }).augments[0]!.effects = [{ type: 'spawnProjectile', ref: 'ghost.does.not.exist', target: 'allies' }];
+    expect(() => loadContent(badRef)).toThrow(/unknown projectile ref/);
+
+    expect(AugmentDefSchema.safeParse({ id: 'x', name: 'x', description: 'x', effects: [] }).success).toBe(false);
+    expect(AugmentDefSchema.safeParse({ id: 'Not An Id', name: 'x', description: 'x', effects: [{ type: 'heal', amount: 1, target: 'allies' }] }).success).toBe(false);
+    expect(AugmentDefSchema.safeParse({ id: 'x', name: 'x', description: 'x', effects: [{ type: 'explode', amount: 1, target: 'allies' }] }).success).toBe(false);
   });
 
   it('content hash is stable across key order and whitespace and changes when a value changes', () => {

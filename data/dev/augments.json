@@ -1,0 +1,32 @@
+{
+  "_provisional": "Engine sample content. Every value is a placeholder until SPEC.md defines it (see QUESTIONS.md).",
+  "augments": [
+    {
+      "id": "aug.iron_skin",
+      "name": "Iron Skin",
+      "description": "+10 armor and +10 magic resist for the whole team, for the rest of the run.",
+      "effects": [
+        { "type": "statMod", "stat": "armor", "mode": "flat", "value": 10, "duration": null, "target": "self" },
+        { "type": "statMod", "stat": "magicResist", "mode": "flat", "value": 10, "duration": null, "target": "self" }
+      ]
+    },
+    {
+      "id": "aug.quickness",
+      "name": "Quickness",
+      "description": "+15% attack speed for the whole team, for the rest of the run.",
+      "effects": [{ "type": "statMod", "stat": "attackSpeed", "mode": "mul", "value": 0.15, "duration": null, "target": "self" }]
+    },
+    {
+      "id": "aug.rally",
+      "name": "Rally",
+      "description": "Shield every ally for 30 at the start of each combat, for the rest of the run.",
+      "effects": [{ "type": "shield", "amount": 30, "duration": null, "target": "self" }]
+    },
+    {
+      "id": "aug.might",
+      "name": "Might",
+      "description": "+8 attack for the whole team, for the rest of the run.",
+      "effects": [{ "type": "statMod", "stat": "attack", "mode": "flat", "value": 8, "duration": null, "target": "self" }]
+    }
+  ]
+}

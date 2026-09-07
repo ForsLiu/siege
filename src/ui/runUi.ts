@@ -111,8 +111,9 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
   const shopOdds = el('div', 'shop-odds');
   hudLevel.append(hudLevelText, xpBar, shopOdds);
   const hudTeam = el('span', 'hud-item');
+  const augmentBadges = el('div', 'augment-badges');
   const hudMsg = el('span', 'hud-msg');
-  hud.append(hudRound, hudHp, hudGold, hudLevel, hudTeam, hudMsg);
+  hud.append(hudRound, hudHp, hudGold, hudLevel, hudTeam, augmentBadges, hudMsg);
 
   const controls = el('div', 'controls');
   const btnReroll = el('button', 'btn', 'Reroll');
@@ -133,10 +134,12 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
   const goldBreakdown = el('div', 'gold-breakdown');
   const roundSummary = el('div', 'round-summary');
   roundSummary.hidden = true;
+  const augmentOffer = el('div', 'augment-offer');
+  augmentOffer.hidden = true;
 
   const shop = el('div', 'shop');
   const bench = el('div', 'bench');
-  root.append(track, hud, goldBreakdown, roundSummary, shop, bench, controls);
+  root.append(track, hud, goldBreakdown, roundSummary, augmentOffer, shop, bench, controls);
 
   // Hover is delegated to the stable `shop` container, not the per-card buttons: those are
   // rebuilt by `replaceChildren()` on every buy/reroll, and a card removed out from under the
@@ -174,6 +177,14 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
       ...shopModel.odds.map((row) => el('span', `odds-chip cost-tier-${row.tier}`, `${row.percent}%`)),
     );
     hudTeam.textContent = `Team ${state.board.length}/${state.level}`;
+    augmentBadges.replaceChildren(
+      ...state.augments.map((id) => {
+        const def = content.augmentsById[id];
+        const badge = el('span', 'augment-badge', def ? def.name[0]!.toUpperCase() : '?');
+        badge.title = def ? `${def.name}: ${def.description}` : id;
+        return badge;
+      }),
+    );
     hudMsg.textContent = view.message;
 
     track.replaceChildren(
@@ -194,6 +205,21 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
       roundSummary.hidden = true;
       goldBreakdown.hidden = mode !== 'planning';
       if (mode === 'planning') goldBreakdown.textContent = `Next round: ${incomeLine(incomePreview(state, content), content, false)}`;
+    }
+
+    const offer = mode === 'planning' ? state.augmentOffer : null;
+    augmentOffer.hidden = offer === null;
+    if (offer) {
+      augmentOffer.replaceChildren(
+        ...offer.map((id) => {
+          const def = content.augmentsById[id];
+          const card = el('button', 'card augment-card');
+          card.title = def?.description ?? '';
+          card.append(el('div', 'card-name', def?.name ?? id), el('div', 'card-desc', def?.description ?? ''));
+          card.addEventListener('click', () => cb.onCommand({ type: 'pickAugment', augmentId: id }));
+          return card;
+        }),
+      );
     }
 
     const planning = mode === 'planning';

@@ -1,5 +1,5 @@
 // Rule/content shapes the sim consumes. Values come from /data (validated by src/data).
-import type { ProjectileDef } from './effects.ts';
+import type { Effect, ProjectileDef } from './effects.ts';
 import type { BoardConfig } from './hex.ts';
 import type { BoardUnit, UnitDef } from './units.ts';
 
@@ -51,12 +51,29 @@ export interface HpLossRules {
   perSurvivingUnit: number;
 }
 
+export interface AugmentRules {
+  /** How many distinct options are offered on an `augment`-type round (or fewer if the
+   *  augment pool is smaller). */
+  offerCount: number;
+}
+
 export interface Rules {
   version: number;
   tickRate: number;
   combat: CombatRules;
   economy: EconomyRules;
   hpLoss: HpLossRules;
+  augment: AugmentRules;
+}
+
+/** An augment row (P0-24): a one-time pick offered on an `augment`-type round, whose
+ *  `effects` (authored `target: 'self'`, applied to every unit on the picking side) run once
+ *  at the start of every combat for the rest of the run — see `FightRules.startEffects`. */
+export interface AugmentDef {
+  id: string;
+  name: string;
+  description: string;
+  effects: Effect[];
 }
 
 /** The round-track icon category (P0-22); a display label today, not yet a distinct mechanic. */
@@ -84,6 +101,13 @@ export interface FightRules {
    * a run that used it still replays hash for hash.
    */
   invincible?: { left: boolean; right: boolean };
+  /**
+   * Picked augments' effects (P0-24): run once per unit, before `onRoundStart`, authored with
+   * `target: 'self'` so each unit buffs only itself (and any `scaling` resolves against that
+   * unit's own stats). Absent/empty is the common case (no augment picked yet) and changes
+   * nothing about the fight.
+   */
+  startEffects?: { left: Effect[]; right: Effect[] };
 }
 
 /** Everything a run needs. Built by src/data from the JSON files. */
@@ -95,6 +119,8 @@ export interface Content {
   projectiles: ProjectileDef[];
   projectilesById: Record<string, ProjectileDef>;
   encounters: Encounter[];
+  augments: AugmentDef[];
+  augmentsById: Record<string, AugmentDef>;
   /** sha-256 of the canonical concatenation of every content file. */
   contentHash: string;
 }

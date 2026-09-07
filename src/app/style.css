@@ -197,6 +197,49 @@ body {
   font-size: 14px;
 }
 
+.augment-badges {
+  display: flex;
+  gap: 3px;
+}
+
+.augment-badge {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #0891b2;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.augment-offer {
+  display: flex;
+  gap: 6px;
+}
+
+.augment-offer[hidden] {
+  display: none;
+}
+
+.augment-card {
+  min-width: 140px;
+  height: auto;
+  padding: 6px 8px;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.card-desc {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: left;
+  white-space: normal;
+}
+
 .shop,
 .bench {
   display: flex;

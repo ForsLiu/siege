@@ -700,6 +700,14 @@ class FightSim implements EffectHost<FightUnit> {
     let reason: FightEndReason = 'timeout';
     let ticks = maxTicks;
     this.tick = 0;
+    // Picked-augment effects (P0-24) are a run-level loadout, not a unit ability: applied once
+    // per unit (authored with `target: 'self'`), before any hook fires, so a `scaling` amount
+    // (none in the dev augments today) resolves against each unit's own stats rather than an
+    // arbitrary side-wide reference unit's.
+    for (const u of this.units) {
+      const effects = u.team === 0 ? this.rules.startEffects?.left : this.rules.startEffects?.right;
+      if (effects && effects.length > 0) runEffects(this, effects, u, null, 'augment');
+    }
     // onRoundStart is the pre-combat setup trigger: it fires once, before any onCombatStart
     // hook, so data can separate "when the round begins" from "when combat begins".
     for (const u of this.units) this.fireHook(u, 'onRoundStart', null);
