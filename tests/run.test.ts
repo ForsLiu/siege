@@ -253,6 +253,33 @@ describe('merges', () => {
     expect(merged.items).toEqual(['item.blade', 'item.chain']);
     expect(s.itemBench).toEqual([]);
   });
+
+  it('a chained merge (2x 2-star + 3x 1-star => one 3-star) transfers items through both merge steps onto the final kept unit, overflow to the bench (P0-28)', () => {
+    const s = fresh();
+    s.level = 5;
+    const boardTwoStar = give(s, 'dev.archer', 2, 'board', { col: 0, row: 7 });
+    boardTwoStar.items.push('item.blade');
+    const benchTwoStar = give(s, 'dev.archer', 2, 'bench');
+    benchTwoStar.items.push('item.chain', 'item.tome');
+    const oneStarA = give(s, 'dev.archer', 1, 'bench');
+    oneStarA.items.push('item.twin_blade');
+    const oneStarB = give(s, 'dev.archer', 1, 'bench');
+    oneStarB.items.push('item.guardians_edge');
+    const allItems = ['item.blade', 'item.chain', 'item.tome', 'item.twin_blade', 'item.guardians_edge'];
+    s.shop[2] = 'dev.archer';
+    s.gold = 10;
+    expect(applyCommand(s, { type: 'buy', slot: 2 }, content).ok).toBe(true); // the 3rd 1-star copy, chains both merge steps
+    const all = [...s.board, ...s.bench.filter((u): u is OwnedUnit => u !== null)];
+    expect(all).toHaveLength(1);
+    const finalUnit = all[0]!;
+    expect(finalUnit.star).toBe(3);
+    expect(finalUnit.uid).toBe(boardTwoStar.uid); // the board copy is always kept, at every star level
+    expect(finalUnit.items[0]).toBe('item.blade'); // never displaced: already on `keep` before any merge
+    expect(finalUnit.items).toHaveLength(eco.itemSlots);
+    // Every item is accounted for exactly once, split between the final unit and the overflow bench.
+    expect([...finalUnit.items, ...s.itemBench].sort()).toEqual([...allItems].sort());
+    expect(checkInvariants(s, content)).toEqual([]);
+  });
 });
 
 describe('sell returns items to the bench (P0-28)', () => {

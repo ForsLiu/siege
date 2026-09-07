@@ -200,6 +200,11 @@ describe('data pipeline', () => {
     (mixedChoice.encounters as { encounters: { loot: { kind: string; itemIds: string[] }[] }[] }).encounters[lootEncIndex]!.loot.push({ kind: 'choice', itemIds: ['item.blade', 'item.twin_blade'] });
     expect(() => loadContent(mixedChoice)).not.toThrow();
 
+    // The existence check applies to every row kind, 'choice' included, not just guaranteed rows.
+    const unknownInChoice = clone(base);
+    (unknownInChoice.encounters as { encounters: { loot: { kind: string; itemIds: string[] }[] }[] }).encounters[lootEncIndex]!.loot.push({ kind: 'choice', itemIds: ['item.blade', 'item.does_not_exist'] });
+    expect(() => loadContent(unknownInChoice)).toThrow(/loot references unknown item/);
+
     expect(LootDropSchema.safeParse({ kind: 'component', itemIds: ['x'] }).success).toBe(true);
     expect(LootDropSchema.safeParse({ kind: 'component', itemIds: [] }).success).toBe(false); // needs at least one candidate
     expect(LootDropSchema.safeParse({ kind: 'choice', itemIds: ['x'] }).success).toBe(false); // a choice needs >= 2 to choose from
