@@ -173,6 +173,38 @@ export function interestFor(gold: number, content: Content): number {
   return Math.min(i.max, Math.floor(gold / i.per));
 }
 
+export interface IncomePreview {
+  base: number;
+  interest: number;
+  /** 0 before the round's combat has resolved: the outcome isn't known yet (P0-21). */
+  winBonus: number;
+  /** Always 0 today: `EconomyRules` defines no win/loss-streak rule yet (P0-21, QUESTIONS.md). */
+  streakBonus: number;
+  encounterGold: number;
+  total: number;
+}
+
+/**
+ * The gold breakdown for the coming round, read by the HUD gold panel and the round-end summary
+ * (P0-21) instead of either computing it themselves. In the `reward` phase this mirrors
+ * `state.pendingReward` exactly (the outcome is already known and `state.gold` cannot change
+ * before `nextRound` applies it); before combat it previews the same base/interest/encounter
+ * amounts with the win bonus at 0, since winning isn't decided yet.
+ */
+export function incomePreview(state: RunState, content: Content): IncomePreview {
+  const eco = content.rules.economy;
+  const base = eco.baseIncome;
+  const interest = interestFor(state.gold, content);
+  const streakBonus = 0;
+  if (state.phase === 'reward' && state.pendingReward) {
+    const r = state.pendingReward;
+    return { base: r.base, interest: r.interest, winBonus: r.winBonus, streakBonus, encounterGold: r.encounterGold, total: r.gold };
+  }
+  const encounterGold = currentEncounter(state, content)?.reward.gold ?? 0;
+  const winBonus = 0;
+  return { base, interest, winBonus, streakBonus, encounterGold, total: base + interest + winBonus + streakBonus + encounterGold };
+}
+
 export function hpLossFor(round: number, enemySurvivors: number, content: Content): number {
   const t = content.rules.hpLoss;
   const base = t.byRound[Math.min(round - 1, t.byRound.length - 1)] ?? 0;

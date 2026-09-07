@@ -65,6 +65,32 @@ body {
   font-weight: 400;
 }
 
+.gold-breakdown {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.round-summary {
+  background: var(--panel-2);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.round-summary[hidden] {
+  display: none;
+}
+
+.round-summary-line:first-child {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+}
+
 .shop,
 .bench {
   display: flex;

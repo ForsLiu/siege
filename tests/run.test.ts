@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand, checkInvariants, legalCommands, validateCommand, type Command } from '../src/sim/commands.ts';
 import { Rng } from '../src/sim/rng.ts';
-import { createRun, drawUnit, interestFor, poolCapacity, sellValue, stateHash, type RunState } from '../src/sim/run.ts';
+import { createRun, drawUnit, incomePreview, interestFor, poolCapacity, sellValue, stateHash, type RunState } from '../src/sim/run.ts';
 import type { OwnedUnit } from '../src/sim/units.ts';
+import { getPolicy } from '../tools/policies/index.ts';
 import { devContent } from './helpers.ts';
 
 const content = devContent();
@@ -270,6 +271,71 @@ describe('economy arithmetic against rules', () => {
     expect(s.round).toBe(2);
     expect(s.phase).toBe('planning');
     expect(s.hashes).toHaveLength(2);
+  });
+
+  describe('incomePreview (P0-21)', () => {
+    it('the breakdown parts always sum to the total, before and after combat resolves', () => {
+      const s = fresh();
+      s.gold = 37;
+      const before = incomePreview(s, content);
+      expect(before.total).toBe(before.base + before.interest + before.winBonus + before.streakBonus + before.encounterGold);
+      expect(before.winBonus).toBe(0); // outcome unknown pre-combat
+      expect(applyCommand(s, { type: 'startCombat' }, content).ok).toBe(true);
+      const after = incomePreview(s, content);
+      expect(after.total).toBe(after.base + after.interest + after.winBonus + after.streakBonus + after.encounterGold);
+    });
+
+    it('in the reward phase, incomePreview mirrors pendingReward exactly (the amount nextRound will grant)', () => {
+      const s = fresh();
+      s.gold = 25;
+      expect(applyCommand(s, { type: 'startCombat' }, content).ok).toBe(true);
+      const r = s.pendingReward!;
+      const preview = incomePreview(s, content);
+      expect(preview.base).toBe(r.base);
+      expect(preview.interest).toBe(r.interest);
+      expect(preview.winBonus).toBe(r.winBonus);
+      expect(preview.encounterGold).toBe(r.encounterGold);
+      expect(preview.total).toBe(r.gold);
+      const goldBefore = s.gold;
+      expect(applyCommand(s, { type: 'nextRound' }, content).ok).toBe(true);
+      expect(s.gold).toBe(goldBefore + preview.total);
+    });
+
+    it('before combat, base/interest/encounterGold preview the current round; winBonus is 0 since the outcome is not known yet', () => {
+      const s = fresh();
+      s.gold = 43;
+      const preview = incomePreview(s, content);
+      expect(preview.base).toBe(eco.baseIncome);
+      expect(preview.interest).toBe(interestFor(43, content));
+      expect(preview.winBonus).toBe(0);
+      expect(preview.encounterGold).toBe(content.encounters[0]!.reward.gold);
+    });
+
+    it('matches the gold actually granted at nextRound across 50 random-policy runs', () => {
+      for (let seed = 0; seed < 50; seed++) {
+        const s = createRun(seed, content);
+        const policy = getPolicy('random');
+        const rng = Rng.fromSeed(seed, `policy:${policy.name}`);
+        let steps = 0;
+        while (s.phase !== 'ended' && steps < 2000) {
+          steps++;
+          if (s.phase === 'reward') {
+            const preview = incomePreview(s, content);
+            const goldBefore = s.gold;
+            expect(applyCommand(s, { type: 'nextRound' }, content).ok).toBe(true);
+            expect(s.gold, `seed ${seed} round ${s.round - 1}`).toBe(goldBefore + preview.total);
+            continue;
+          }
+          const legal = legalCommands(s, content);
+          if (legal.length === 0) throw new Error(`seed ${seed}: no legal commands in phase ${s.phase}`);
+          const cmd = policy.choose({ state: s, content, legal, rng });
+          expect(applyCommand(s, cmd, content).ok).toBe(true);
+        }
+        // The step cap is only a runaway guard; every seed must actually finish so the checks
+        // above ran for the whole run, not a silently-truncated prefix of it (code review).
+        expect(s.phase, `seed ${seed} did not reach 'ended' within ${steps} steps`).toBe('ended');
+      }
+    });
   });
   it('hp loss on defeat follows the table and the run ends at 0 hp', () => {
     const s = fresh();

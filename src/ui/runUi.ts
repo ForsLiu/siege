@@ -2,7 +2,7 @@
 import type { Command } from '../sim/commands.ts';
 import { validateCommand } from '../sim/commands.ts';
 import type { Content } from '../sim/rules.ts';
-import { sellValue, xpNeeded, type RunState } from '../sim/run.ts';
+import { incomePreview, sellValue, xpNeeded, type IncomePreview, type RunState } from '../sim/run.ts';
 
 export type RunUiMode = 'planning' | 'combat' | 'reward';
 
@@ -39,6 +39,46 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
   return e;
 }
 
+/**
+ * The P0-21 gold breakdown as text: every number comes straight from `incomePreview` (the sim)
+ * or is read verbatim off `content.rules.economy` for the interest/win-bonus rule labels ("1g per
+ * 10, max 5") — this function only arranges strings, it never adds or derives a gold amount.
+ * `resolved` is true in the reward phase (the win bonus and total are the actual grant); false
+ * before combat (the win bonus isn't decided yet, so `preview.winBonus` is 0 and the rule value
+ * is shown separately as a "+N more on a win" note, not folded into the total).
+ */
+function incomeLine(preview: IncomePreview, content: Content, resolved: boolean): string {
+  const eco = content.rules.economy;
+  const parts = [`+${preview.base} base`, `+${preview.interest} interest (1g per ${eco.interest.per}, max ${eco.interest.max})`];
+  if (resolved) parts.push(`+${preview.winBonus} win`);
+  if (preview.streakBonus !== 0) parts.push(`+${preview.streakBonus} streak`);
+  parts.push(`+${preview.encounterGold} encounter`);
+  const note = !resolved && eco.winBonus > 0 ? ` (+${eco.winBonus} more on a win)` : '';
+  return `${parts.join(', ')} = +${preview.total}${note}`;
+}
+
+/** Round-end summary lines (P0-21 §5): result, hp lost, rewards line by line, next round. */
+function summaryLines(state: RunState, content: Content): string[] {
+  const record = state.history[state.history.length - 1] ?? null;
+  const lines: string[] = [];
+  if (record) {
+    const verdict = record.fight ? (record.fight.winner === 'left' ? 'Victory' : record.fight.winner === 'right' ? 'Defeat' : 'Draw') : 'Skipped (win)';
+    lines.push(record.fight && record.fight.hpLoss > 0 ? `${verdict} — lost ${record.fight.hpLoss} hp` : verdict);
+  }
+  const preview = incomePreview(state, content);
+  const eco = content.rules.economy;
+  lines.push(`Base income: +${preview.base}`);
+  lines.push(`Interest (1g per ${eco.interest.per}, max ${eco.interest.max}): +${preview.interest}`);
+  lines.push(`Win bonus: +${preview.winBonus}`);
+  if (preview.streakBonus !== 0) lines.push(`Streak bonus: +${preview.streakBonus}`);
+  lines.push(`Encounter reward: +${preview.encounterGold} gold, +${eco.xpPerRound} xp`);
+  lines.push(`Total: +${preview.total} gold`);
+  // The encounter schema has no `type` field yet (P0-22 adds it); the id stands in for now.
+  const next = content.encounters[state.round] ?? null;
+  lines.push(next ? `Next: round ${state.round + 1} — ${next.id}` : `Next: round ${state.round + 1} — the run ends here`);
+  return lines;
+}
+
 export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
   const root = el('div', 'run-ui');
   parent.appendChild(root);
@@ -68,9 +108,13 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
   const btnPause = el('button', 'btn', 'Pause (Esc)');
   controls.append(btnReroll, btnXp, btnSell, btnStart, speedGroup, btnPause);
 
+  const goldBreakdown = el('div', 'gold-breakdown');
+  const roundSummary = el('div', 'round-summary');
+  roundSummary.hidden = true;
+
   const shop = el('div', 'shop');
   const bench = el('div', 'bench');
-  root.append(hud, shop, bench, controls);
+  root.append(hud, goldBreakdown, roundSummary, shop, bench, controls);
 
   // Hover is delegated to the stable `shop` container, not the per-card buttons: those are
   // rebuilt by `replaceChildren()` on every buy/reroll, and a card removed out from under the
@@ -106,6 +150,16 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
     hudLevel.textContent = state.level >= eco.maxLevel ? `Level ${state.level} (max)` : `Level ${state.level}  XP ${state.xp}/${need}`;
     hudTeam.textContent = `Team ${state.board.length}/${state.level}`;
     hudMsg.textContent = view.message;
+
+    if (mode === 'reward') {
+      goldBreakdown.hidden = true;
+      roundSummary.hidden = false;
+      roundSummary.replaceChildren(...summaryLines(state, content).map((line) => el('div', 'round-summary-line', line)));
+    } else {
+      roundSummary.hidden = true;
+      goldBreakdown.hidden = mode !== 'planning';
+      if (mode === 'planning') goldBreakdown.textContent = `Next round: ${incomeLine(incomePreview(state, content), content, false)}`;
+    }
 
     const planning = mode === 'planning';
     btnReroll.disabled = !planning || validateCommand(state, { type: 'reroll' }, content) !== null;
