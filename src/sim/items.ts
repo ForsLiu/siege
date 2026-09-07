@@ -27,6 +27,19 @@ export function recipeKey(a: string, b: string): string {
   return a <= b ? `${a}|${b}` : `${b}|${a}`;
 }
 
+export type LootDropKind = 'component' | 'completed' | 'choice';
+
+/**
+ * One row of an encounter's loot table (P0-28). A `component`/`completed` row grants one item,
+ * drawn uniformly at random from `itemIds` on the `loot` RNG stream (every `itemIds` entry must
+ * be that same kind — a loader check). A `choice` row instead offers every id in `itemIds`
+ * verbatim, no RNG involved, for the player to pick exactly one via the `pickLoot` Command.
+ */
+export interface LootDropDef {
+  kind: LootDropKind;
+  itemIds: string[];
+}
+
 /**
  * The held item (its index in `heldItems`, and the resulting completed item id) that `itemId`
  * would combine with, or null if no held item is a component with a matching recipe. Returns the

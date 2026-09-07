@@ -1,7 +1,7 @@
 // Rule/content shapes the sim consumes. Values come from /data (validated by src/data).
 import type { Effect, ProjectileDef } from './effects.ts';
 import type { BoardConfig } from './hex.ts';
-import type { ItemDef, RecipeDef } from './items.ts';
+import type { ItemDef, LootDropDef, RecipeDef } from './items.ts';
 import type { TraitDef } from './traits.ts';
 import type { BoardUnit, UnitDef } from './units.ts';
 
@@ -90,6 +90,8 @@ export interface Encounter {
   type: EncounterType;
   reward: { gold: number };
   board: BoardUnit[];
+  /** Loot table rolled on a win (P0-28); empty when the encounter drops nothing. */
+  loot: LootDropDef[];
 }
 
 /** Everything a fight needs besides the two boards and the seed. */

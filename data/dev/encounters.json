@@ -102,6 +102,10 @@
    "reward": {
     "gold": 2
    },
+   "loot": [
+    { "kind": "component", "itemIds": ["item.blade", "item.chain", "item.tome"] },
+    { "kind": "choice", "itemIds": ["item.twin_blade", "item.guardians_edge", "item.arcane_ward"] }
+   ],
    "board": [
     {
      "defId": "dev.brawler",
@@ -302,6 +306,9 @@
    "reward": {
     "gold": 0
    },
+   "loot": [
+    { "kind": "completed", "itemIds": ["item.twin_blade", "item.guardians_edge", "item.arcane_ward"] }
+   ],
    "board": [
     {
      "defId": "dev.titan",

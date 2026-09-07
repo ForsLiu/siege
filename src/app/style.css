@@ -233,6 +233,21 @@ body {
   gap: 2px;
 }
 
+.loot-offer {
+  display: flex;
+  gap: 6px;
+}
+
+.loot-offer[hidden] {
+  display: none;
+}
+
+.loot-card {
+  min-width: 100px;
+  height: auto;
+  padding: 6px 8px;
+}
+
 .card-desc {
   color: var(--muted);
   font-size: 11px;

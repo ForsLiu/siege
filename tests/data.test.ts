@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeContentHash, loadContent, validateFile, type RawContentFiles } from '../src/data/loader.ts';
 import { kindForPath } from '../src/data/manifest.ts';
-import { AugmentDefSchema, EffectSchema, EncounterSchema, ItemDefSchema, RecipeDefSchema, StatBlockSchema, TraitDefSchema, UnitDefSchema } from '../src/data/schemas.ts';
+import { AugmentDefSchema, EffectSchema, EncounterSchema, ItemDefSchema, LootDropSchema, RecipeDefSchema, StatBlockSchema, TraitDefSchema, UnitDefSchema } from '../src/data/schemas.ts';
 import { devContent, rawDevContent } from './helpers.ts';
 
 function clone<T>(v: T): T {
@@ -179,6 +179,32 @@ describe('data pipeline', () => {
     expect(ItemDefSchema.safeParse({ id: 'x', name: 'x', kind: 'gizmo', effects: [] }).success).toBe(false);
     expect(RecipeDefSchema.safeParse({ components: ['a', 'b'], result: 'c' }).success).toBe(true);
     expect(RecipeDefSchema.safeParse({ components: ['a'], result: 'c' }).success).toBe(false);
+  });
+
+  it('encounter loot tables (P0-28): unknown item, kind mismatch on a guaranteed row, and schema shape are all rejected', () => {
+    const base = rawDevContent();
+    const lootEncIndex = (base.encounters as { encounters: { loot?: unknown[] }[] }).encounters.findIndex((e) => (e.loot?.length ?? 0) > 0);
+    expect(lootEncIndex, 'expected at least one dev encounter with a loot table').toBeGreaterThanOrEqual(0);
+
+    const unknownItem = clone(base);
+    (unknownItem.encounters as { encounters: { loot: { kind: string; itemIds: string[] }[] }[] }).encounters[lootEncIndex]!.loot.push({ kind: 'component', itemIds: ['item.does_not_exist'] });
+    expect(() => loadContent(unknownItem)).toThrow(/loot references unknown item/);
+
+    const wrongKind = clone(base);
+    // item.twin_blade is 'completed', not 'component'.
+    (wrongKind.encounters as { encounters: { loot: { kind: string; itemIds: string[] }[] }[] }).encounters[lootEncIndex]!.loot.push({ kind: 'component', itemIds: ['item.twin_blade'] });
+    expect(() => loadContent(wrongKind)).toThrow(/not 'component'/);
+
+    // A 'choice' row may freely mix kinds — no kind check applies to it.
+    const mixedChoice = clone(base);
+    (mixedChoice.encounters as { encounters: { loot: { kind: string; itemIds: string[] }[] }[] }).encounters[lootEncIndex]!.loot.push({ kind: 'choice', itemIds: ['item.blade', 'item.twin_blade'] });
+    expect(() => loadContent(mixedChoice)).not.toThrow();
+
+    expect(LootDropSchema.safeParse({ kind: 'component', itemIds: ['x'] }).success).toBe(true);
+    expect(LootDropSchema.safeParse({ kind: 'component', itemIds: [] }).success).toBe(false); // needs at least one candidate
+    expect(LootDropSchema.safeParse({ kind: 'choice', itemIds: ['x'] }).success).toBe(false); // a choice needs >= 2 to choose from
+    expect(LootDropSchema.safeParse({ kind: 'choice', itemIds: ['x', 'y'] }).success).toBe(true);
+    expect(LootDropSchema.safeParse({ kind: 'gizmo', itemIds: ['x'] }).success).toBe(false);
   });
 
   it('content hash is stable across key order and whitespace and changes when a value changes', () => {

@@ -204,6 +204,18 @@ export function loadContent(raw: RawContentFiles): Content {
     recipesByKey[key] = r.result;
   }
 
+  // An encounter's loot table (P0-28) references real items: every id in a 'component'/'completed'
+  // row must resolve and be that exact kind (a 'choice' row may mix kinds — it's the player's pick).
+  for (const e of encounters) {
+    for (const row of e.loot) {
+      for (const id of row.itemIds) {
+        const def = itemsById[id];
+        if (!def) throw new ContentError('encounters', `${e.id}: loot references unknown item ${id}`);
+        if (row.kind !== 'choice' && def.kind !== row.kind) throw new ContentError('encounters', `${e.id}: loot item ${id} is kind '${def.kind}', not '${row.kind}'`);
+      }
+    }
+  }
+
   const contentHash = computeContentHash({ board: raw.board, rules: raw.rules, units: raw.units, encounters: raw.encounters, augments: raw.augments, traits: raw.traits, items: raw.items });
   return { board, rules, units, unitsById, projectiles, projectilesById, encounters, augments, augmentsById, traits, traitsById, items, itemsById, recipes, recipesByKey, contentHash };
 }

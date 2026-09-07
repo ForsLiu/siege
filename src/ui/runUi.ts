@@ -100,6 +100,7 @@ function summaryLines(state: RunState, content: Content): string[] {
   lines.push(`Win bonus: +${preview.winBonus}`);
   if (preview.streakBonus !== 0) lines.push(`Streak bonus: +${preview.streakBonus}`);
   lines.push(`Encounter reward: +${preview.encounterGold} gold, +${eco.xpPerRound} xp`);
+  if (preview.items.length > 0) lines.push(`Loot: ${preview.items.map((id) => content.itemsById[id]?.name ?? id).join(', ')}`);
   lines.push(`Total: +${preview.total} gold`);
   const next = content.encounters[state.round] ?? null;
   lines.push(next ? `Next: round ${state.round + 1} — ${next.type}` : `Next: round ${state.round + 1} — the run ends here`);
@@ -149,12 +150,14 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
   roundSummary.hidden = true;
   const augmentOffer = el('div', 'augment-offer');
   augmentOffer.hidden = true;
+  const lootOffer = el('div', 'loot-offer');
+  lootOffer.hidden = true;
 
   const traitPanel = el('div', 'trait-panel');
 
   const shop = el('div', 'shop');
   const bench = el('div', 'bench');
-  root.append(track, hud, traitPanel, goldBreakdown, roundSummary, augmentOffer, shop, bench, controls);
+  root.append(track, hud, traitPanel, goldBreakdown, roundSummary, augmentOffer, lootOffer, shop, bench, controls);
 
   // Hover is delegated to the stable `shop` container, not the per-card buttons: those are
   // rebuilt by `replaceChildren()` on every buy/reroll, and a card removed out from under the
@@ -242,6 +245,20 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
           card.title = def?.description ?? '';
           card.append(el('div', 'card-name', def?.name ?? id), el('div', 'card-desc', def?.description ?? ''));
           card.addEventListener('click', () => cb.onCommand({ type: 'pickAugment', augmentId: id }));
+          return card;
+        }),
+      );
+    }
+
+    const loot = mode === 'reward' ? state.lootOffer : null;
+    lootOffer.hidden = loot === null;
+    if (loot) {
+      lootOffer.replaceChildren(
+        ...loot.map((id) => {
+          const def = content.itemsById[id];
+          const card = el('button', 'card loot-card');
+          card.append(el('div', 'card-name', def?.name ?? id));
+          card.addEventListener('click', () => cb.onCommand({ type: 'pickLoot', itemId: id }));
           return card;
         }),
       );

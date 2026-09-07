@@ -30,6 +30,9 @@ export interface Reward {
   winBonus: number;
   encounterGold: number;
   xp: number;
+  /** Guaranteed loot rolled this round (P0-28): 'component'/'completed' drops. Never includes a
+   *  'choice' row's pick — that goes through `lootOffer`/`pickLoot` instead. */
+  items: string[];
 }
 
 export interface RoundRecord {
@@ -99,6 +102,12 @@ export interface RunState {
   /** Item ids on the item bench (P0-27): `equipItem` removes one to equip it; `dev:giveItem`
    *  and encounter loot (P0-28) add to it. */
   itemBench: string[];
+  /** Ids offered by a pending 'choice' loot row (P0-28); null when none is pending. Set only in
+   *  the `reward` phase, after a won round's loot table rolls; an unresolved offer lapses
+   *  (cleared, not carried forward) when `advanceRound` moves past it — no acceptance criterion
+   *  requires blocking `nextRound` on it, and it already mirrors how an unpicked augment offer
+   *  lapses the moment `refreshAugmentOffer` overwrites it (QUESTIONS.md P0-28-03). */
+  lootOffer: string[] | null;
   dev: DevFlags;
   /** Round-boundary hashes: [0] after creation, then one per nextRound, plus one at run end. */
   hashes: string[];
@@ -146,6 +155,7 @@ export function createRun(seed: number, content: Content, options: RunOptions = 
     augments: [],
     augmentOffer: null,
     itemBench: [],
+    lootOffer: null,
     dev: { invinciblePieces: false, invinciblePlayer: false },
     hashes: [],
     commandCount: 0,
@@ -163,7 +173,10 @@ export function currentEncounter(state: RunState, content: Content): Encounter |
 export interface RoundTrackRewardPreview {
   gold: number;
   xp: number;
-  /** Always [] until P0-27/28 (items) land: no loot-table content exists yet. */
+  /** Every distinct item id this encounter's loot table could produce (P0-28): a preview of
+   *  what's possible, not an actual roll — this is a pure function of content, and a real roll
+   *  needs the `loot` RNG stream, only available once the round is actually won. Empty when the
+   *  encounter has no loot table. */
   items: string[];
   /** True on an `augment`-type round; the actual offer is drawn by P0-24, not previewed here. */
   augmentOffer: boolean;
@@ -192,7 +205,7 @@ export function roundTrack(round: number, content: Content): RoundTrackEntry[] {
     type: e.type,
     isCurrent: e.round === round,
     isPast: e.round < round,
-    rewardPreview: { gold: e.reward.gold, xp: eco.xpPerRound, items: [], augmentOffer: e.type === 'augment' },
+    rewardPreview: { gold: e.reward.gold, xp: eco.xpPerRound, items: [...new Set(e.loot.flatMap((row) => row.itemIds))], augmentOffer: e.type === 'augment' },
   }));
 }
 
@@ -224,6 +237,9 @@ export interface IncomePreview {
   streakBonus: number;
   encounterGold: number;
   total: number;
+  /** Guaranteed loot actually granted this round (P0-28); always [] before combat resolves,
+   *  since a real roll needs the outcome (and the `loot` stream is only consumed on a win). */
+  items: string[];
 }
 
 /**
@@ -240,11 +256,11 @@ export function incomePreview(state: RunState, content: Content): IncomePreview 
   const streakBonus = 0;
   if (state.phase === 'reward' && state.pendingReward) {
     const r = state.pendingReward;
-    return { base: r.base, interest: r.interest, winBonus: r.winBonus, streakBonus, encounterGold: r.encounterGold, total: r.gold };
+    return { base: r.base, interest: r.interest, winBonus: r.winBonus, streakBonus, encounterGold: r.encounterGold, total: r.gold, items: r.items };
   }
   const encounterGold = currentEncounter(state, content)?.reward.gold ?? 0;
   const winBonus = 0;
-  return { base, interest, winBonus, streakBonus, encounterGold, total: base + interest + winBonus + streakBonus + encounterGold };
+  return { base, interest, winBonus, streakBonus, encounterGold, total: base + interest + winBonus + streakBonus + encounterGold, items: [] };
 }
 
 export function hpLossFor(round: number, enemySurvivors: number, content: Content): number {
@@ -493,7 +509,11 @@ export function equipItem(unit: OwnedUnit, itemId: string, content: Content): vo
 /**
  * Merge `mergeCopies` copies of (defId, star) into one unit of star + 1, chaining upward.
  * The kept unit is the lowest-uid copy on the board, else the lowest-uid copy on the bench.
- * Bench copies are consumed before board copies. Returns the number of merges performed.
+ * Bench copies are consumed before board copies. The removed copies' items move onto the kept
+ * unit up to `itemSlots`, in removal order; anything past the cap returns to the item bench
+ * (P0-28) — each chained merge (star -> star+1 -> star+2, ...) applies this independently, so a
+ * unit that fills up on one merge still only overflows the excess on the next. Returns the number
+ * of merges performed.
  */
 export function tryMerge(state: RunState, defId: string, star: number, content: Content): number {
   const eco = content.rules.economy;
@@ -506,7 +526,13 @@ export function tryMerge(state: RunState, defId: string, star: number, content: 
     benchCopies.sort((a, b) => a.uid - b.uid);
     const keep = boardCopies[0] ?? (benchCopies[0] as OwnedUnit);
     const candidates = [...benchCopies, ...boardCopies].filter((u) => u.uid !== keep.uid);
-    for (let i = 0; i < eco.mergeCopies - 1; i++) removeUnit(state, (candidates[i] as OwnedUnit).uid);
+    for (let i = 0; i < eco.mergeCopies - 1; i++) {
+      const removed = removeUnit(state, (candidates[i] as OwnedUnit).uid) as OwnedUnit;
+      for (const itemId of removed.items) {
+        if (keep.items.length < eco.itemSlots) keep.items.push(itemId);
+        else state.itemBench.push(itemId);
+      }
+    }
     keep.star = s + 1;
     merges++;
     s++;
@@ -520,13 +546,34 @@ export function boardComposition(state: RunState): string[] {
   return state.board.map((u) => `${u.defId}@${u.star}`).sort();
 }
 
-export function computeReward(state: RunState, won: boolean, encounter: Encounter, content: Content): Reward {
+/**
+ * Rolls `encounter.loot` on the `loot` RNG stream (P0-28): a 'component'/'completed' row grants
+ * one item drawn uniformly from its `itemIds`; a 'choice' row sets `state.lootOffer` instead of
+ * granting anything (the player picks via `pickLoot`). Only on a win, and only when the encounter
+ * has a loot table — the stream is left untouched otherwise, exactly like `refreshAugmentOffer`
+ * only consuming the `augment` stream on an augment-type round. `state.lootOffer` is always reset
+ * here (never carried over from a previous round's unresolved offer — QUESTIONS.md P0-28-03).
+ */
+export function rollLoot(state: RunState, encounter: Encounter, won: boolean): string[] {
+  state.lootOffer = null;
+  if (!won || encounter.loot.length === 0) return [];
+  const granted: string[] = [];
+  withRng(state, 'loot', (rng) => {
+    for (const row of encounter.loot) {
+      if (row.kind === 'choice') state.lootOffer = [...row.itemIds];
+      else granted.push(rng.pick(row.itemIds));
+    }
+  });
+  return granted;
+}
+
+export function computeReward(state: RunState, won: boolean, encounter: Encounter, content: Content, items: string[]): Reward {
   const eco = content.rules.economy;
   const base = eco.baseIncome;
   const interest = interestFor(state.gold, content);
   const winBonus = won ? eco.winBonus : 0;
   const encounterGold = encounter.reward.gold;
-  return { gold: base + interest + winBonus + encounterGold, base, interest, winBonus, encounterGold, xp: eco.xpPerRound };
+  return { gold: base + interest + winBonus + encounterGold, base, interest, winBonus, encounterGold, xp: eco.xpPerRound, items };
 }
 
 export interface CombatOutcome {
@@ -581,7 +628,8 @@ export function resolveCombat(state: RunState, content: Content): CombatOutcome 
     // fight with hp left is still a defeat.
     endRun(state, won ? 'win' : 'loss', won ? 'victory' : 'defeat');
   } else {
-    state.pendingReward = computeReward(state, won, encounter, content);
+    const items = rollLoot(state, encounter, won);
+    state.pendingReward = computeReward(state, won, encounter, content, items);
     state.phase = 'reward';
   }
   return { result, summary };
@@ -589,7 +637,9 @@ export function resolveCombat(state: RunState, content: Content): CombatOutcome 
 
 /**
  * `dev:skipRound`: resolve the current round as a win with the normal rewards, without a fight.
- * No fight runs, so the `combat` stream is untouched and the round record carries `fight: null`.
+ * No fight runs, so the `combat` stream is untouched and the round record carries `fight: null`;
+ * the `loot` stream is still rolled exactly as a real win would (P0-28), since loot is a
+ * reward-phase concern independent of how the round was won.
  */
 export function skipRoundAsWin(state: RunState, content: Content): void {
   const encounter = currentEncounter(state, content);
@@ -611,7 +661,8 @@ export function skipRoundAsWin(state: RunState, content: Content): void {
     endRun(state, 'win', 'victory');
     return;
   }
-  state.pendingReward = computeReward(state, true, encounter, content);
+  const items = rollLoot(state, encounter, true);
+  state.pendingReward = computeReward(state, true, encounter, content, items);
   state.phase = 'reward';
 }
 
@@ -620,6 +671,7 @@ export function endRun(state: RunState, outcome: Outcome, reason: EndReason): vo
   state.outcome = outcome;
   state.endReason = reason;
   state.pendingReward = null;
+  state.lootOffer = null;
   state.hashes.push(stateHash(state));
 }
 
@@ -628,8 +680,10 @@ export function advanceRound(state: RunState, content: Content): void {
   if (reward) {
     state.gold += reward.gold;
     addXp(state, reward.xp, content);
+    state.itemBench.push(...reward.items);
   }
   state.pendingReward = null;
+  state.lootOffer = null;
   state.round++;
   state.phase = 'planning';
   refreshShop(state, content);

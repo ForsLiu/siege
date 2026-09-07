@@ -11,11 +11,13 @@ import {
   incomePreview,
   interestFor,
   poolCapacity,
+  rollLoot,
   roundTrack,
   sellValue,
   shopHudModel,
   skipRoundAsWin,
   stateHash,
+  tryMerge,
   xpNeeded,
   type RunState,
 } from '../src/sim/run.ts';
@@ -219,6 +221,56 @@ describe('merges', () => {
     // Buying a 1-star does not merge with 3-stars; the copy stays on the bench.
     expect(applyCommand(s, { type: 'buy', slot: 0 }, content).ok).toBe(true);
     expect(s.bench.filter((u) => u && u.star === eco.maxStar)).toHaveLength(eco.mergeCopies);
+  });
+
+  it('a merge of units carrying itemSlots items each moves items onto the kept unit up to the cap, overflow to the item bench (P0-28)', () => {
+    const s = fresh();
+    const kept = give(s, 'dev.archer', 1, 'bench'); // lowest uid: kept, starts empty
+    const b = give(s, 'dev.archer', 1, 'bench');
+    b.items.push('item.blade', 'item.chain', 'item.tome');
+    const c = give(s, 'dev.archer', 1, 'bench');
+    c.items.push('item.twin_blade', 'item.guardians_edge', 'item.arcane_ward');
+    expect(kept.items).toHaveLength(0);
+    expect(tryMerge(s, 'dev.archer', 1, content)).toBe(1);
+    const merged = [...s.board, ...s.bench].find((u): u is OwnedUnit => u !== null && u.uid === kept.uid)!;
+    expect(merged.star).toBe(2);
+    // b's 3 items fill the cap first (removed before c, per tryMerge's bench-then-board, uid order);
+    // c's 3 items all overflow to the bench, unchanged and in order.
+    expect(merged.items).toEqual(['item.blade', 'item.chain', 'item.tome']);
+    expect(s.itemBench).toEqual(['item.twin_blade', 'item.guardians_edge', 'item.arcane_ward']);
+    expect(checkInvariants(s, content)).toEqual([]);
+  });
+
+  it('a merge with room to spare transfers every item with no overflow', () => {
+    const s = fresh();
+    const kept = give(s, 'dev.archer', 1, 'bench');
+    const b = give(s, 'dev.archer', 1, 'bench');
+    b.items.push('item.blade');
+    const c = give(s, 'dev.archer', 1, 'bench');
+    c.items.push('item.chain');
+    expect(tryMerge(s, 'dev.archer', 1, content)).toBe(1);
+    const merged = [...s.board, ...s.bench].find((u): u is OwnedUnit => u !== null && u.uid === kept.uid)!;
+    expect(merged.items).toEqual(['item.blade', 'item.chain']);
+    expect(s.itemBench).toEqual([]);
+  });
+});
+
+describe('sell returns items to the bench (P0-28)', () => {
+  it('selling a unit pushes its items onto state.itemBench', () => {
+    const s = fresh();
+    const unit = give(s, 'dev.knight', 1, 'board');
+    unit.items.push('item.blade', 'item.twin_blade');
+    s.itemBench.push('item.chain'); // a pre-existing bench item must survive untouched
+    expect(applyCommand(s, { type: 'sell', uid: unit.uid }, content).ok).toBe(true);
+    expect(s.itemBench).toEqual(['item.chain', 'item.blade', 'item.twin_blade']);
+    expect(checkInvariants(s, content)).toEqual([]);
+  });
+
+  it('selling a unit with no items leaves the item bench unchanged', () => {
+    const s = fresh();
+    const unit = give(s, 'dev.knight', 1, 'bench');
+    expect(applyCommand(s, { type: 'sell', uid: unit.uid }, content).ok).toBe(true);
+    expect(s.itemBench).toEqual([]);
   });
 });
 
@@ -511,6 +563,102 @@ describe('economy arithmetic against rules', () => {
     });
   });
 
+  describe('loot (P0-28)', () => {
+    // Derived, not hardcoded: whichever round's encounter carries a loot table with a 'choice'
+    // row (today dev.e05, round 5), so this suite keeps testing something real if the dev
+    // encounter mix ever changes.
+    const lootEncounter = content.encounters.find((e) => e.loot.some((r) => r.kind === 'choice'))!;
+    const lootRound = lootEncounter.round;
+    const componentRow = lootEncounter.loot.find((r) => r.kind === 'component')!;
+    const choiceRow = lootEncounter.loot.find((r) => r.kind === 'choice')!;
+
+    function toLootRound(state: RunState): void {
+      while (state.round < lootRound) {
+        skipRoundAsWin(state, content);
+        advanceRound(state, content);
+      }
+    }
+
+    it('rollLoot is deterministic per seed, changes with the seed, and leaves the loot stream untouched on a loss or when the encounter has no loot table', () => {
+      expect(lootEncounter.loot.length).toBeGreaterThan(0);
+      const a = fresh(3);
+      const b = fresh(3);
+      const grantedA = rollLoot(a, lootEncounter, true);
+      const grantedB = rollLoot(b, lootEncounter, true);
+      expect(grantedA).toEqual(grantedB);
+      expect(a.lootOffer).toEqual(b.lootOffer);
+      expect(a.rng.loot).toEqual(b.rng.loot);
+      expect(componentRow.itemIds).toContain(grantedA[0]);
+      expect(a.lootOffer).toEqual(choiceRow.itemIds);
+
+      const results = [1, 2, 3, 4, 5, 6, 7, 8].map((seed) => JSON.stringify(rollLoot(fresh(seed), lootEncounter, true)));
+      expect(new Set(results).size).toBeGreaterThan(1);
+
+      const lost = fresh(3);
+      const beforeLoss = lost.rng.loot;
+      expect(rollLoot(lost, lootEncounter, false)).toEqual([]);
+      expect(lost.rng.loot).toEqual(beforeLoss);
+      expect(lost.lootOffer).toBeNull();
+
+      const noLootEncounter = content.encounters.find((e) => e.loot.length === 0)!;
+      const noLoot = fresh(3);
+      const beforeNoLoot = noLoot.rng.loot;
+      expect(rollLoot(noLoot, noLootEncounter, true)).toEqual([]);
+      expect(noLoot.rng.loot).toEqual(beforeNoLoot);
+    });
+
+    it('a won round rolls a guaranteed drop into pendingReward.items and a choice row into lootOffer', () => {
+      const s = fresh(1);
+      toLootRound(s);
+      skipRoundAsWin(s, content);
+      expect(s.pendingReward!.items).toHaveLength(1);
+      expect(componentRow.itemIds).toContain(s.pendingReward!.items[0]);
+      expect(s.lootOffer).toEqual(choiceRow.itemIds);
+    });
+
+    it('pickLoot rejects outside the reward phase, an unknown item id, and an id not in the offer', () => {
+      const s = fresh(1);
+      toLootRound(s);
+      expectRejected(s, { type: 'pickLoot', itemId: choiceRow.itemIds[0]! }, /requires the reward phase/);
+      skipRoundAsWin(s, content);
+      expectRejected(s, { type: 'pickLoot', itemId: 'item.does_not_exist' }, /unknown item id/);
+      const notOffered = content.items.map((i) => i.id).find((id) => !choiceRow.itemIds.includes(id))!;
+      expect(notOffered, 'expected at least one real item excluded from the offer').toBeDefined();
+      expectRejected(s, { type: 'pickLoot', itemId: notOffered }, /not in the current offer/);
+    });
+
+    it('picking a loot offer adds it to the item bench, clears the offer, and legalCommands stops offering pickLoot', () => {
+      const s = fresh(1);
+      toLootRound(s);
+      skipRoundAsWin(s, content);
+      const offered = s.lootOffer![0]!;
+      expect(legalCommands(s, content).some((c) => c.type === 'pickLoot' && c.itemId === offered)).toBe(true);
+      expect(applyCommand(s, { type: 'pickLoot', itemId: offered }, content).ok).toBe(true);
+      expect(s.lootOffer).toBeNull();
+      expect(s.itemBench).toContain(offered);
+      expect(legalCommands(s, content).some((c) => c.type === 'pickLoot')).toBe(false);
+    });
+
+    it("advanceRound applies the guaranteed drop to the item bench and lapses an unpicked lootOffer, driven through the real Commands (skipRound -> nextRound)", () => {
+      const s = fresh(1);
+      toLootRound(s);
+      skipRoundAsWin(s, content);
+      const granted = s.pendingReward!.items;
+      expect(s.lootOffer).not.toBeNull();
+      applyCommand(s, { type: 'nextRound' }, content);
+      for (const id of granted) expect(s.itemBench).toContain(id);
+      expect(s.lootOffer).toBeNull(); // the choice row's offer lapsed, unresolved
+    });
+
+    it("the round-track reward preview lists every distinct item id the loot table could produce, without rolling (no RNG state change, no combat outcome needed)", () => {
+      const s = fresh(1);
+      const before = s.rng.loot;
+      const entry = roundTrack(lootRound, content).find((e) => e.round === lootRound)!;
+      expect(new Set(entry.rewardPreview.items)).toEqual(new Set(lootEncounter.loot.flatMap((r) => r.itemIds)));
+      expect(s.rng.loot).toEqual(before);
+    });
+  });
+
   describe('roundTrack (P0-22)', () => {
     it('has one entry per content.encounters, in that order, with the reward preview read straight off the data', () => {
       const track = roundTrack(1, content);
@@ -522,7 +670,7 @@ describe('economy arithmetic against rules', () => {
         expect(entry.type).toBe(e.type);
         expect(entry.rewardPreview.gold).toBe(e.reward.gold);
         expect(entry.rewardPreview.xp).toBe(eco.xpPerRound);
-        expect(entry.rewardPreview.items).toEqual([]);
+        expect(entry.rewardPreview.items).toEqual([...new Set(e.loot.flatMap((row) => row.itemIds))]);
         expect(entry.rewardPreview.augmentOffer).toBe(e.type === 'augment');
       });
     });

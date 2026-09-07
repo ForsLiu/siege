@@ -38,6 +38,7 @@ export type PlayerCommand =
   | { type: 'levelUp' }
   | { type: 'pickAugment'; augmentId: string }
   | { type: 'equipItem'; uid: number; benchIndex: number }
+  | { type: 'pickLoot'; itemId: string }
   | { type: 'startCombat' }
   | { type: 'nextRound' }
   | { type: 'abandon' };
@@ -47,7 +48,7 @@ export type Command = PlayerCommand | DevCommand;
 
 export type PlayerCommandType = PlayerCommand['type'];
 export type CommandType = Command['type'];
-export const COMMAND_TYPES: readonly PlayerCommandType[] = ['buy', 'sell', 'place', 'bench', 'swap', 'reroll', 'levelUp', 'pickAugment', 'equipItem', 'startCombat', 'nextRound', 'abandon'];
+export const COMMAND_TYPES: readonly PlayerCommandType[] = ['buy', 'sell', 'place', 'bench', 'swap', 'reroll', 'levelUp', 'pickAugment', 'equipItem', 'pickLoot', 'startCombat', 'nextRound', 'abandon'];
 
 export type CommandResult = { ok: true; state: RunState; fight: FightResult | null } | { ok: false; reason: string };
 
@@ -70,6 +71,13 @@ export function validateCommand(state: RunState, cmd: Command, content: Content)
   if (state.phase === 'ended') return 'run has ended';
   if (cmd.type === 'abandon') return null;
   if (cmd.type === 'nextRound') return state.phase === 'reward' ? null : `nextRound requires the reward phase (phase is ${state.phase})`;
+  if (cmd.type === 'pickLoot') {
+    if (state.phase !== 'reward') return `pickLoot requires the reward phase (phase is ${state.phase})`;
+    if (!Object.hasOwn(content.itemsById, cmd.itemId)) return `unknown item id ${String(cmd.itemId)}`;
+    if (state.lootOffer === null) return 'no loot offer is pending';
+    if (!state.lootOffer.includes(cmd.itemId)) return `${cmd.itemId} is not in the current offer`;
+    return null;
+  }
   if (state.phase !== 'planning') return `${cmd.type} requires the planning phase (phase is ${state.phase})`;
 
   switch (cmd.type) {
@@ -185,6 +193,7 @@ export function applyCommand(state: RunState, cmd: Command, content: Content): C
       const unit = removeUnit(state, cmd.uid) as OwnedUnit;
       state.gold += sellValue(unit, content);
       returnToPool(state, unit.defId, copiesForStar(unit.star, content), content);
+      state.itemBench.push(...unit.items);
       return { ok: true, state, fight: null };
     }
     case 'place': {
@@ -257,6 +266,11 @@ export function applyCommand(state: RunState, cmd: Command, content: Content): C
       equipItem(found.unit, itemId, content);
       return { ok: true, state, fight: null };
     }
+    case 'pickLoot': {
+      state.itemBench.push(cmd.itemId);
+      state.lootOffer = null;
+      return { ok: true, state, fight: null };
+    }
     case 'startCombat': {
       state.phase = 'combat';
       const { result } = resolveCombat(state, content);
@@ -286,6 +300,7 @@ export function legalCommands(state: RunState, content: Content): PlayerCommand[
   const out: PlayerCommand[] = [];
   if (state.phase === 'ended') return out;
   if (state.phase === 'reward') {
+    if (state.lootOffer) for (const itemId of state.lootOffer) out.push({ type: 'pickLoot', itemId });
     out.push({ type: 'nextRound' });
     return out;
   }
