@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeContentHash, loadContent, validateFile, type RawContentFiles } from '../src/data/loader.ts';
 import { kindForPath } from '../src/data/manifest.ts';
-import { EffectSchema, StatBlockSchema, UnitDefSchema } from '../src/data/schemas.ts';
+import { EffectSchema, EncounterSchema, StatBlockSchema, UnitDefSchema } from '../src/data/schemas.ts';
 import { devContent, rawDevContent } from './helpers.ts';
 
 function clone<T>(v: T): T {
@@ -70,6 +70,15 @@ describe('data pipeline', () => {
     const gap = clone(base);
     (gap.encounters as { encounters: { round: number }[] }).encounters[1]!.round = 5;
     expect(() => loadContent(gap)).toThrow(/gaps/);
+
+    const badType = clone(base);
+    (badType.encounters as { encounters: { type: string }[] }).encounters[0]!.type = 'raid';
+    expect(() => loadContent(badType)).toThrow();
+    expect(EncounterSchema.safeParse({ id: 'x', round: 1, type: 'raid', reward: { gold: 0 }, board: [] }).success).toBe(false);
+
+    const missingType = clone(base);
+    delete (missingType.encounters as { encounters: Record<string, unknown>[] }).encounters[0]!['type'];
+    expect(() => loadContent(missingType)).toThrow();
 
     const oddRows = clone(base);
     (oddRows.board as { rows: number }).rows = 7;

@@ -2,7 +2,7 @@
 import type { Command } from '../sim/commands.ts';
 import { validateCommand } from '../sim/commands.ts';
 import type { Content } from '../sim/rules.ts';
-import { incomePreview, sellValue, xpNeeded, type IncomePreview, type RunState } from '../sim/run.ts';
+import { incomePreview, roundTrack, sellValue, xpNeeded, type IncomePreview, type RoundTrackEntry, type RunState } from '../sim/run.ts';
 
 export type RunUiMode = 'planning' | 'combat' | 'reward';
 
@@ -57,6 +57,21 @@ function incomeLine(preview: IncomePreview, content: Content, resolved: boolean)
   return `${parts.join(', ')} = +${preview.total}${note}`;
 }
 
+/** One-letter round-track icon per encounter type (P0-22); no art asset pipeline exists yet, so
+ *  a coloured letter (styled per `.track-<type>` in style.css) stands in for a real icon. */
+function trackIcon(type: RoundTrackEntry['type']): string {
+  return type[0]!.toUpperCase();
+}
+
+/** Hover tooltip text for a round-track cell: read straight off `RoundTrackEntry.rewardPreview`. */
+function trackTooltip(entry: RoundTrackEntry): string {
+  const r = entry.rewardPreview;
+  const parts = [`Round ${entry.round} (${entry.type})`, `+${r.gold} gold, +${r.xp} xp`];
+  if (r.items.length > 0) parts.push(`items: ${r.items.join(', ')}`);
+  if (r.augmentOffer) parts.push('augment offer');
+  return parts.join(' — ');
+}
+
 /** Round-end summary lines (P0-21 §5): result, hp lost, rewards line by line, next round. */
 function summaryLines(state: RunState, content: Content): string[] {
   const record = state.history[state.history.length - 1] ?? null;
@@ -73,15 +88,16 @@ function summaryLines(state: RunState, content: Content): string[] {
   if (preview.streakBonus !== 0) lines.push(`Streak bonus: +${preview.streakBonus}`);
   lines.push(`Encounter reward: +${preview.encounterGold} gold, +${eco.xpPerRound} xp`);
   lines.push(`Total: +${preview.total} gold`);
-  // The encounter schema has no `type` field yet (P0-22 adds it); the id stands in for now.
   const next = content.encounters[state.round] ?? null;
-  lines.push(next ? `Next: round ${state.round + 1} — ${next.id}` : `Next: round ${state.round + 1} — the run ends here`);
+  lines.push(next ? `Next: round ${state.round + 1} — ${next.type}` : `Next: round ${state.round + 1} — the run ends here`);
   return lines;
 }
 
 export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
   const root = el('div', 'run-ui');
   parent.appendChild(root);
+
+  const track = el('div', 'round-track');
 
   const hud = el('div', 'hud');
   const hudRound = el('span', 'hud-item');
@@ -114,7 +130,7 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
 
   const shop = el('div', 'shop');
   const bench = el('div', 'bench');
-  root.append(hud, goldBreakdown, roundSummary, shop, bench, controls);
+  root.append(track, hud, goldBreakdown, roundSummary, shop, bench, controls);
 
   // Hover is delegated to the stable `shop` container, not the per-card buttons: those are
   // rebuilt by `replaceChildren()` on every buy/reroll, and a card removed out from under the
@@ -150,6 +166,16 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
     hudLevel.textContent = state.level >= eco.maxLevel ? `Level ${state.level} (max)` : `Level ${state.level}  XP ${state.xp}/${need}`;
     hudTeam.textContent = `Team ${state.board.length}/${state.level}`;
     hudMsg.textContent = view.message;
+
+    track.replaceChildren(
+      ...roundTrack(state.round, content).map((entry) => {
+        const cell = el('div', `track-cell track-${entry.type}`, trackIcon(entry.type));
+        cell.classList.toggle('current', entry.isCurrent);
+        cell.classList.toggle('past', entry.isPast);
+        cell.title = trackTooltip(entry);
+        return cell;
+      }),
+    );
 
     if (mode === 'reward') {
       goldBreakdown.hidden = true;

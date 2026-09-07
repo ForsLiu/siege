@@ -4,6 +4,7 @@
   {
    "id": "dev.e01",
    "round": 1,
+   "type": "normal",
    "reward": {
     "gold": 0
    },
@@ -19,6 +20,7 @@
   {
    "id": "dev.e02",
    "round": 2,
+   "type": "normal",
    "reward": {
     "gold": 0
    },
@@ -40,6 +42,7 @@
   {
    "id": "dev.e03",
    "round": 3,
+   "type": "elite",
    "reward": {
     "gold": 1
    },
@@ -67,6 +70,7 @@
   {
    "id": "dev.e04",
    "round": 4,
+   "type": "normal",
    "reward": {
     "gold": 1
    },
@@ -94,6 +98,7 @@
   {
    "id": "dev.e05",
    "round": 5,
+   "type": "treasure",
    "reward": {
     "gold": 2
    },
@@ -127,6 +132,7 @@
   {
    "id": "dev.e06",
    "round": 6,
+   "type": "normal",
    "reward": {
     "gold": 2
    },
@@ -160,6 +166,7 @@
   {
    "id": "dev.e07",
    "round": 7,
+   "type": "elite",
    "reward": {
     "gold": 2
    },
@@ -199,6 +206,7 @@
   {
    "id": "dev.e08",
    "round": 8,
+   "type": "augment",
    "reward": {
     "gold": 3
    },
@@ -244,6 +252,7 @@
   {
    "id": "dev.e09",
    "round": 9,
+   "type": "normal",
    "reward": {
     "gold": 3
    },
@@ -289,6 +298,7 @@
   {
    "id": "dev.e10",
    "round": 10,
+   "type": "boss",
    "reward": {
     "gold": 0
    },

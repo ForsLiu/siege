@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand, checkInvariants, legalCommands, validateCommand, type Command } from '../src/sim/commands.ts';
 import { Rng } from '../src/sim/rng.ts';
-import { createRun, drawUnit, incomePreview, interestFor, poolCapacity, sellValue, stateHash, type RunState } from '../src/sim/run.ts';
+import { createRun, drawUnit, incomePreview, interestFor, poolCapacity, roundTrack, sellValue, stateHash, type RunState } from '../src/sim/run.ts';
 import type { OwnedUnit } from '../src/sim/units.ts';
 import { getPolicy } from '../tools/policies/index.ts';
 import { devContent } from './helpers.ts';
@@ -335,6 +335,61 @@ describe('economy arithmetic against rules', () => {
         // above ran for the whole run, not a silently-truncated prefix of it (code review).
         expect(s.phase, `seed ${seed} did not reach 'ended' within ${steps} steps`).toBe('ended');
       }
+    });
+  });
+
+  describe('roundTrack (P0-22)', () => {
+    it('has one entry per content.encounters, in that order, with the reward preview read straight off the data', () => {
+      const track = roundTrack(1, content);
+      expect(track).toHaveLength(content.encounters.length);
+      content.encounters.forEach((e, i) => {
+        const entry = track[i]!;
+        expect(entry.round).toBe(e.round);
+        expect(entry.encounterId).toBe(e.id);
+        expect(entry.type).toBe(e.type);
+        expect(entry.rewardPreview.gold).toBe(e.reward.gold);
+        expect(entry.rewardPreview.xp).toBe(eco.xpPerRound);
+        expect(entry.rewardPreview.items).toEqual([]);
+        expect(entry.rewardPreview.augmentOffer).toBe(e.type === 'augment');
+      });
+    });
+
+    it('marks exactly the given round current and every earlier round past', () => {
+      for (const round of [1, 5, content.encounters.length]) {
+        const track = roundTrack(round, content);
+        for (const entry of track) {
+          expect(entry.isCurrent).toBe(entry.round === round);
+          expect(entry.isPast).toBe(entry.round < round);
+        }
+      }
+    });
+
+    it('is identical across a replay of the same seed, at every round along the way', () => {
+      const seed = 7;
+      const live = fresh(seed);
+      const policy = getPolicy('random');
+      const rng = Rng.fromSeed(seed, `policy:${policy.name}`);
+      const commands: Command[] = [];
+      // Captured from the live run as it goes, independently of the replay below: the replay's
+      // tracks are compared against these snapshots, not recomputed from the same round number
+      // at comparison time (which would prove nothing about the replay itself).
+      const liveTracks: ReturnType<typeof roundTrack>[] = [];
+      let steps = 0;
+      while (live.phase !== 'ended' && steps < 2000) {
+        steps++;
+        const legal = legalCommands(live, content);
+        const cmd = policy.choose({ state: live, content, legal, rng });
+        expect(applyCommand(live, cmd, content).ok).toBe(true);
+        commands.push(cmd);
+        liveTracks.push(roundTrack(live.round, content));
+      }
+      expect(live.phase).toBe('ended');
+
+      const replayed = fresh(seed);
+      commands.forEach((cmd, i) => {
+        expect(applyCommand(replayed, cmd, content).ok).toBe(true);
+        expect(roundTrack(replayed.round, content)).toEqual(liveTracks[i]);
+      });
     });
   });
   it('hp loss on defeat follows the table and the run ends at 0 hp', () => {

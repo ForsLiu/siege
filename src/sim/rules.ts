@@ -59,9 +59,14 @@ export interface Rules {
   hpLoss: HpLossRules;
 }
 
+/** The round-track icon category (P0-22); a display label today, not yet a distinct mechanic. */
+export const ENCOUNTER_TYPES = ['normal', 'elite', 'boss', 'treasure', 'augment'] as const;
+export type EncounterType = (typeof ENCOUNTER_TYPES)[number];
+
 export interface Encounter {
   id: string;
   round: number;
+  type: EncounterType;
   reward: { gold: number };
   board: BoardUnit[];
 }

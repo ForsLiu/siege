@@ -3,7 +3,7 @@
 import { fight, type FightEndReason, type FightWinner } from './fight.ts';
 import { hashValue } from './hash.ts';
 import { createRngStates, Rng, type RngStates, type StreamName } from './rng.ts';
-import { fightRulesFrom, type Content, type Encounter } from './rules.ts';
+import { fightRulesFrom, type Content, type Encounter, type EncounterType } from './rules.ts';
 import type { BoardUnit, OwnedUnit, PlacedUnit } from './units.ts';
 
 export type Phase = 'planning' | 'combat' | 'reward' | 'ended';
@@ -152,6 +152,42 @@ export function createRun(seed: number, content: Content, options: RunOptions = 
 
 export function currentEncounter(state: RunState, content: Content): Encounter | null {
   return content.encounters[state.round - 1] ?? null;
+}
+
+export interface RoundTrackRewardPreview {
+  gold: number;
+  xp: number;
+  /** Always [] until P0-27/28 (items) land: no loot-table content exists yet. */
+  items: string[];
+  /** True on an `augment`-type round; the actual offer is drawn by P0-24, not previewed here. */
+  augmentOffer: boolean;
+}
+
+export interface RoundTrackEntry {
+  round: number;
+  encounterId: string;
+  type: EncounterType;
+  isCurrent: boolean;
+  isPast: boolean;
+  rewardPreview: RoundTrackRewardPreview;
+}
+
+/**
+ * The run's round track (P0-22): one entry per `content.encounters`, in that order, with
+ * `isCurrent`/`isPast` derived from `round` (normally `state.round`). A pure function of content
+ * plus a round number — nothing here reads RNG or command history, so it is identical for two
+ * runs of the same seed at the same round regardless of how they got there (a replay included).
+ */
+export function roundTrack(round: number, content: Content): RoundTrackEntry[] {
+  const eco = content.rules.economy;
+  return content.encounters.map((e) => ({
+    round: e.round,
+    encounterId: e.id,
+    type: e.type,
+    isCurrent: e.round === round,
+    isPast: e.round < round,
+    rewardPreview: { gold: e.reward.gold, xp: eco.xpPerRound, items: [], augmentOffer: e.type === 'augment' },
+  }));
 }
 
 export function unitCost(defId: string, content: Content): number {

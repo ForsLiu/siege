@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { DAMAGE_KINDS, HOOK_NAMES, TARGET_SELS } from '../sim/effects.ts';
 import type { AuraDef, AuraEffect, Effect, Hooks, ProjectileDef } from '../sim/effects.ts';
 import type { BoardConfig } from '../sim/hex.ts';
+import { ENCOUNTER_TYPES } from '../sim/rules.ts';
 import type { Encounter, Rules } from '../sim/rules.ts';
 import type { SandboxRuleOverrides, SandboxUnit } from '../sim/sandbox.ts';
 import { STAT_KIND, STAT_MAX, STAT_NAMES } from '../sim/stats.ts';
@@ -134,6 +135,7 @@ export const BoardFileSchema = z.strictObject({
 export const EncounterSchema = z.strictObject({
   id: z.string().min(1),
   round: posInt,
+  type: z.enum(ENCOUNTER_TYPES),
   reward: z.strictObject({ gold: nonNegInt }),
   board: z.array(BoardUnitSchema),
   // EXTENSION POINTS (SPEC): loot tables, augment offers, encounter modifiers.
