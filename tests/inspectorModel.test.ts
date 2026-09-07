@@ -75,7 +75,7 @@ describe('inspectorModel (P0-19)', () => {
     expect(model!.cost).toBe(def.cost);
     expect(model!.star).toBe(1);
     expect(model!.items).toEqual([]);
-    expect(model!.traits).toEqual([]);
+    expect(model!.traits).toEqual(def.traits.map((id) => ({ id, text: `${content.traitsById[id]!.name}: ${content.traitsById[id]!.description}` })));
     expect(model!.combat).toBeNull();
     const base = def.stats[0]!;
     expect(model!.mana).toEqual({ current: Math.min(base.startMana, base.maxMana), max: base.maxMana });
@@ -135,6 +135,37 @@ describe('inspectorModel (P0-19)', () => {
       expect(s.sources).toEqual([]);
       expect(s.current).toBe(s.base);
     }
+  });
+
+  it('a trait breakpoint\'s modifier (source `trait:<id>`, same shape fight.ts applies via runEffects) shows up as a stat source exactly like any other source (P0-26)', () => {
+    // No live wiring from a real fight into a CombatOverlay exists yet (QUESTIONS.md P0-20-06:
+    // combat-time live inspection deferred), so this exercises the same generic
+    // stat-source mechanism the modifier-listing test above already covers, with a
+    // trait-shaped source string matching fight.ts's `` `trait:${traitId}` `` convention exactly.
+    const state = devRun();
+    const uid = spawn(state, 'dev.brawler', 1);
+    const base = content.unitsById['dev.brawler']!.stats[0]!;
+    const traitMod = { source: 'trait:trait.brawn', stat: 'armor' as const, mode: 'flat' as const, value: 10, expiresTick: null };
+    const overlay: CombatOverlay = { hp: 400, maxHp: 500, mana: 0, maxMana: base.maxMana, shields: 0, modifiers: [traitMod] };
+    const model = inspectorModel(state, uid, content, overlay)!;
+    const armor = model.stats.find((s) => s.stat === 'armor')!;
+    expect(armor.sources).toEqual([traitMod]);
+    expect(armor.current).toBe(base.armor + 10);
+  });
+
+  it('lists the unit\'s own trait ids with name+description text (P0-26); does not resolve which breakpoint is active — that is the trait panel\'s job', () => {
+    const state = devRun();
+    const uid = spawn(state, 'dev.brawler', 1); // dev.brawler carries trait.brawn (data/dev/traits.json)
+    const model = inspectorModel(state, uid, content)!;
+    expect(model.traits).toEqual([{ id: 'trait.brawn', text: `${content.traitsById['trait.brawn']!.name}: ${content.traitsById['trait.brawn']!.description}` }]);
+  });
+
+  it('a unit with no traits reports an empty traits list', () => {
+    const formatterContent = contentWithFormatterUnit();
+    const state = createRun(1, formatterContent, { devCommands: true });
+    const uid = spawn(state, 'test.formatter', 1, formatterContent);
+    const model = inspectorModel(state, uid, formatterContent)!;
+    expect(model.traits).toEqual([]);
   });
 
   it('items is a copy, not a live reference into RunState', () => {

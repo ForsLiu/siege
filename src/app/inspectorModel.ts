@@ -7,6 +7,7 @@ import { hexesWithin } from '../sim/hex.ts';
 import { findUnit, type RunState } from '../sim/run.ts';
 import type { Content } from '../sim/rules.ts';
 import { computeStat, STAT_NAMES, type Modifier, type StatBlock, type StatName } from '../sim/stats.ts';
+import type { TraitDef } from '../sim/traits.ts';
 import { baseStats, type UnitDef } from '../sim/units.ts';
 
 export interface InspectorStat {
@@ -42,7 +43,8 @@ export interface InspectorModel {
   /** Shop cost; also the pool tier (units.ts: `UnitDef.cost`). */
   cost: number;
   star: number;
-  /** Always empty until P0-25 (trait system) lands; see QUESTIONS.md P0-19-01. */
+  /** The def's own trait ids, name+description text (P0-26); not which breakpoint is active —
+   *  see the P0-26 trait panel for board-composition-dependent activation. */
   traits: InspectorTrait[];
   ability: InspectorAbility | null;
   stats: InspectorStat[];
@@ -62,7 +64,7 @@ export interface CombatOverlay {
   modifiers: readonly Modifier[];
 }
 
-function buildModel(uid: number | null, def: UnitDef, star: number, items: readonly string[], combat: CombatOverlay | null): InspectorModel {
+function buildModel(uid: number | null, def: UnitDef, star: number, items: readonly string[], combat: CombatOverlay | null, traitsById: Record<string, TraitDef>): InspectorModel {
   const base = baseStats(def, star);
   const modifiers = combat?.modifiers ?? [];
   const statOf = (stat: StatName): number => computeStat(base[stat], stat, modifiers);
@@ -82,7 +84,12 @@ function buildModel(uid: number | null, def: UnitDef, star: number, items: reado
     name: def.name,
     cost: def.cost,
     star,
-    traits: [],
+    // The def's own trait membership (static); which breakpoint (if any) is currently active is
+    // board-composition-dependent and belongs to the P0-26 trait panel, not one unit's card.
+    traits: def.traits.map((id): InspectorTrait => {
+      const trait = traitsById[id];
+      return { id, text: trait ? `${trait.name}: ${trait.description}` : id };
+    }),
     ability: def.ability ? { name: def.ability.name, text: def.ability.effects.map((e) => describeEffect(e, statOf)).join('; ') } : null,
     stats,
     // Copied, not aliased: RunState.items is a live mutable array, and this model is a read-only
@@ -100,14 +107,14 @@ export function inspectorModel(state: RunState, uid: number, content: Content, c
   const unit = found.unit;
   const def = content.unitsById[unit.defId];
   if (!def) return null;
-  return buildModel(unit.uid, def, unit.star, unit.items, combat);
+  return buildModel(unit.uid, def, unit.star, unit.items, combat, content.traitsById);
 }
 
 /** A tier-1, no-items, planning-phase preview of a shop offer (P0-20): the offer has no `uid`. */
 export function shopPreviewModel(defId: string, content: Content): InspectorModel | null {
   const def = content.unitsById[defId];
   if (!def) return null;
-  return buildModel(null, def, 1, [], null);
+  return buildModel(null, def, 1, [], null, content.traitsById);
 }
 
 /** A preview of a sandbox row (P0-20): stat overrides are baked into the star's block, the same
@@ -119,7 +126,7 @@ export function sandboxPreviewModel(unit: { defId: string; star: number; items: 
   const block = def.stats[starIdx];
   if (!block) return null;
   const overridden: UnitDef = { ...def, stats: def.stats.map((b, i) => (i === starIdx ? { ...b, ...unit.statOverrides } : b)) };
-  return buildModel(null, overridden, unit.star, unit.items, null);
+  return buildModel(null, overridden, unit.star, unit.items, null, content.traitsById);
 }
 
 export interface RangeRings {
@@ -170,8 +177,11 @@ function resolvedAmount(amount: number, scaling: Scaling | undefined, statOf: (s
   return scaling ? amount + scaling.factor * statOf(scaling.stat) : amount;
 }
 
-/** Renders one effect as text with its numbers resolved against `statOf` (the unit's current stats). */
-function describeEffect(e: Effect, statOf: (s: StatName) => number): string {
+/** Renders one effect as text with its numbers resolved against `statOf` (the unit's current
+ *  stats). Exported for the P0-26 trait panel, which has no single holder unit to resolve a
+ *  breakpoint's `scaling` against — none of today's trait content uses `scaling`, so callers
+ *  without a real unit pass a stub (e.g. `() => 0`); see QUESTIONS.md P0-26. */
+export function describeEffect(e: Effect, statOf: (s: StatName) => number): string {
   switch (e.type) {
     case 'damage':
       return `Deal ${round1(resolvedAmount(e.amount, e.scaling, statOf))} ${e.kind} damage to ${targetText(e.target)}`;

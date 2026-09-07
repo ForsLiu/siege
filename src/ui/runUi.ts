@@ -3,6 +3,7 @@ import type { Command } from '../sim/commands.ts';
 import { validateCommand } from '../sim/commands.ts';
 import type { Content } from '../sim/rules.ts';
 import { incomePreview, roundTrack, sellValue, shopHudModel, type IncomePreview, type RoundTrackEntry, type RunState } from '../sim/run.ts';
+import { traitPanelModel, type TraitPanelEntry } from '../app/traitPanelModel.ts';
 
 export type RunUiMode = 'planning' | 'combat' | 'reward';
 
@@ -72,6 +73,18 @@ function trackTooltip(entry: RoundTrackEntry): string {
   return parts.join(' — ');
 }
 
+/** "3 / 2 4 6" — current holder count, then every breakpoint's threshold, space-separated. */
+function traitCountText(entry: TraitPanelEntry): string {
+  return `${entry.count} / ${entry.breakpoints.map((bp) => bp.count).join(' ')}`;
+}
+
+/** Hover tooltip: the effect text per breakpoint (reached one marked) and the contributing units. */
+function traitTooltip(entry: TraitPanelEntry): string {
+  const lines = [entry.description, ...entry.breakpoints.map((bp) => `${bp.reached ? '> ' : ''}${bp.count}: ${bp.text}`)];
+  if (entry.holderNames.length > 0) lines.push(`Units: ${entry.holderNames.join(', ')}`);
+  return lines.join('\n');
+}
+
 /** Round-end summary lines (P0-21 §5): result, hp lost, rewards line by line, next round. */
 function summaryLines(state: RunState, content: Content): string[] {
   const record = state.history[state.history.length - 1] ?? null;
@@ -137,9 +150,11 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
   const augmentOffer = el('div', 'augment-offer');
   augmentOffer.hidden = true;
 
+  const traitPanel = el('div', 'trait-panel');
+
   const shop = el('div', 'shop');
   const bench = el('div', 'bench');
-  root.append(track, hud, goldBreakdown, roundSummary, augmentOffer, shop, bench, controls);
+  root.append(track, hud, traitPanel, goldBreakdown, roundSummary, augmentOffer, shop, bench, controls);
 
   // Hover is delegated to the stable `shop` container, not the per-card buttons: those are
   // rebuilt by `replaceChildren()` on every buy/reroll, and a card removed out from under the
@@ -197,6 +212,16 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
       }),
     );
 
+    traitPanel.replaceChildren(
+      ...traitPanelModel(state.board, content).map((entry) => {
+        const row = el('div', 'trait-row');
+        row.classList.toggle('active', entry.breakpoints.some((bp) => bp.reached));
+        row.title = traitTooltip(entry);
+        row.append(el('span', 'trait-icon', entry.icon), el('span', 'trait-name', entry.name), el('span', 'trait-count', traitCountText(entry)));
+        return row;
+      }),
+    );
+
     if (mode === 'reward') {
       goldBreakdown.hidden = true;
       roundSummary.hidden = false;
@@ -243,6 +268,18 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
         card.dataset['defid'] = defId;
         if (def) card.classList.add(`cost-tier-${def.cost}`);
         card.append(el('div', 'card-name', def?.name ?? defId), el('div', 'card-cost', `${def?.cost ?? '?'}g`));
+        if (def && def.traits.length > 0) {
+          const tags = el('div', 'card-traits');
+          tags.append(
+            ...def.traits.map((id) => {
+              const trait = content.traitsById[id];
+              const tag = el('span', 'trait-tag', trait ? trait.name[0]!.toUpperCase() : '?');
+              tag.title = trait ? `${trait.name}: ${trait.description}` : id;
+              return tag;
+            }),
+          );
+          card.appendChild(tags);
+        }
         card.disabled = !planning || validateCommand(state, { type: 'buy', slot }, content) !== null;
         card.addEventListener('click', () => cb.onCommand({ type: 'buy', slot }));
       } else {
