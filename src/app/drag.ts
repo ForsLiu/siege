@@ -6,6 +6,26 @@ import { isPlayerCell, type Cell } from '../sim/hex.ts';
 import type { Content } from '../sim/rules.ts';
 import { boardUnitAt, findUnit, type RunState } from '../sim/run.ts';
 
+/** True when `benchIndex` names a real item bench slot that can be picked up (P0-29). */
+export function canDragItem(state: RunState, benchIndex: number): boolean {
+  return state.phase === 'planning' && Number.isInteger(benchIndex) && benchIndex >= 0 && benchIndex < state.itemBench.length;
+}
+
+/**
+ * What dropping item-bench slot `benchIndex` onto unit `uid` does: an `equipItem` Command,
+ * validated the same way any other Command is (unknown uid, out-of-slots, wrong phase all surface
+ * as the sim's own rejection reason). `uid` is null when the drop landed on empty space (P0-29).
+ */
+export function itemDropOutcome(state: RunState, benchIndex: number, uid: number | null, content: Content): DropOutcome {
+  if (state.phase !== 'planning') return { command: null, reason: `dragging requires the planning phase (phase is ${state.phase})`, valid: false };
+  if (!Number.isInteger(benchIndex) || benchIndex < 0 || benchIndex >= state.itemBench.length) return { command: null, reason: `no item at bench index ${benchIndex}`, valid: false };
+  if (uid === null) return { command: null, reason: 'drop an item on a unit', valid: false };
+  if (!findUnit(state, uid)) return { command: null, reason: `no unit with uid ${uid}`, valid: false };
+  const command: Command = { type: 'equipItem', uid, benchIndex };
+  const reason = validateCommand(state, command, content);
+  return reason === null ? { command, reason: null, valid: true } : { command: null, reason, valid: false };
+}
+
 export interface DropOutcome {
   /** The command the drop would issue, or null when it is a no-op or illegal. */
   command: Command | null;

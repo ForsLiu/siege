@@ -21,6 +21,9 @@ export interface RunUiCallbacks {
   onSelect(uid: number | null): void;
   /** Mouse-down on a bench card: the app picks the unit up and resolves the drop on the board. */
   onDragStart(uid: number): void;
+  /** Mouse-down on an item-bench card (P0-29): the app picks the item up and resolves the drop
+   *  (equip, or combine into a completed item) on the unit it lands on. */
+  onItemDragStart(benchIndex: number): void;
   onSpeed(speed: number): void;
   onPause(): void;
   /** A shop card is hovered (defId) or un-hovered (null): shop offers have no uid to select, so
@@ -157,7 +160,8 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
 
   const shop = el('div', 'shop');
   const bench = el('div', 'bench');
-  root.append(track, hud, traitPanel, goldBreakdown, roundSummary, augmentOffer, lootOffer, shop, bench, controls);
+  const itemBench = el('div', 'item-bench');
+  root.append(track, hud, traitPanel, goldBreakdown, roundSummary, augmentOffer, lootOffer, shop, bench, itemBench, controls);
 
   // Hover is delegated to the stable `shop` container, not the per-card buttons: those are
   // rebuilt by `replaceChildren()` on every buy/reroll, and a card removed out from under the
@@ -312,6 +316,7 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
       const card = el('button', 'card bench-card');
       if (unit) {
         const def = content.unitsById[unit.defId];
+        card.dataset['uid'] = String(unit.uid);
         card.append(el('div', 'card-name', def?.name ?? unit.defId), el('div', 'card-star', '★'.repeat(unit.star)));
         card.classList.toggle('selected', view.selectedUid === unit.uid);
         card.disabled = !planning;
@@ -322,6 +327,16 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
         card.disabled = true;
       }
       bench.appendChild(card);
+    });
+
+    itemBench.replaceChildren();
+    state.itemBench.forEach((itemId, index) => {
+      const def = content.itemsById[itemId];
+      const card = el('button', `card item-card item-${def?.kind ?? 'component'}`);
+      card.append(el('div', 'card-name', def?.name ?? itemId));
+      card.disabled = !planning;
+      card.addEventListener('mousedown', () => cb.onItemDragStart(index));
+      itemBench.appendChild(card);
     });
   }
 

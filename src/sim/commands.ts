@@ -23,7 +23,7 @@ import {
 } from './run.ts';
 import { refreshShop, copiesForStar, addXp, poolCapacity } from './run.ts';
 import { applyDevCommand, isDevCommand, validateDevCommand, type DevCommand, type DevCommandType } from './devCommands.ts';
-import { findCombineTarget } from './items.ts';
+import { canAddItem } from './items.ts';
 import type { OwnedUnit, PlacedUnit } from './units.ts';
 
 export type { DevCommand, DevCommandType };
@@ -145,11 +145,7 @@ export function validateCommand(state: RunState, cmd: Command, content: Content)
       const found = findUnit(state, cmd.uid);
       if (!found) return `no unit with uid ${cmd.uid}`;
       const itemId = state.itemBench[cmd.benchIndex] as string;
-      // A combine (a held component + this item -> a completed item) never grows the item
-      // count, so it is exempt from the slot cap; only a plain add needs the free-slot check.
-      const combine = findCombineTarget(found.unit.items, itemId, content.itemsById, content.recipesByKey);
-      if (!combine && found.unit.items.length >= eco.itemSlots) return `unit already holds ${eco.itemSlots} items`;
-      return null;
+      return canAddItem(found.unit.items, itemId, content.itemsById, content.recipesByKey, eco.itemSlots);
     }
     case 'startCombat':
       return null;

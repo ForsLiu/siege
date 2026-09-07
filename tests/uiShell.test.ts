@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { REPO_ROOT } from '../src/data/node.ts';
-import { canDrag, dropOutcome } from '../src/app/drag.ts';
+import { canDrag, canDragItem, dropOutcome, itemDropOutcome } from '../src/app/drag.ts';
 import { hotkeyAction, HOTKEY_HELP, isViewAction } from '../src/app/hotkeys.ts';
 import { boardClick, boardDrop } from '../src/app/pointer.ts';
 import { letterbox, PLAY_ASPECT } from '../src/render/layout.ts';
@@ -111,6 +111,56 @@ describe('drag-and-drop placement', () => {
     expect(applyCommand(s, { type: 'startCombat' }, content).ok).toBe(true);
     expect(canDrag(s, uid)).toBe(false);
     expect(dropOutcome(s, uid, { col: 2, row: playerRow }, content).reason).toMatch(/requires the planning phase/);
+  });
+});
+
+describe('item drag-and-drop (P0-29)', () => {
+  function giveItems(s: RunState, ...itemIds: string[]): void {
+    for (const id of itemIds) expect(applyCommand(s, { type: 'dev:giveItem', itemId: id }, content).ok).toBe(true);
+  }
+
+  it('dropping an item bench slot onto a unit equips it', () => {
+    const s = runWithUnits(1);
+    giveItems(s, 'item.blade');
+    const uid = s.board[0]!.uid;
+    expect(canDragItem(s, 0)).toBe(true);
+    const out = itemDropOutcome(s, 0, uid, content);
+    expect(out).toEqual({ command: { type: 'equipItem', uid, benchIndex: 0 }, reason: null, valid: true });
+    expect(applyCommand(s, out.command!, content).ok).toBe(true);
+    expect(s.board[0]!.items).toEqual(['item.blade']);
+  });
+
+  it('a full item bench slot rejects a plain add with the sim reason, but a combine at the cap still succeeds', () => {
+    const s = runWithUnits(1);
+    const uid = s.board[0]!.uid;
+    const cap = content.rules.economy.itemSlots;
+    for (let i = 0; i < cap; i++) expect(applyCommand(s, { type: 'dev:giveItem', itemId: 'item.chain' }, content).ok).toBe(true);
+    for (let i = 0; i < cap; i++) expect(applyCommand(s, { type: 'equipItem', uid, benchIndex: 0 }, content).ok).toBe(true);
+    expect(s.board[0]!.items.length).toBe(cap);
+    // A plain add (no combine — a completed item never matches a recipe) onto a full unit is refused.
+    giveItems(s, 'item.twin_blade');
+    const full = itemDropOutcome(s, 0, uid, content);
+    expect(full.valid).toBe(false);
+    expect(full.reason).toMatch(new RegExp(`already holds ${cap} items`));
+    // Combining a matching component (item.chain + item.tome -> a completed item) is cap-neutral.
+    giveItems(s, 'item.tome');
+    const combine = itemDropOutcome(s, 1, uid, content);
+    expect(combine.valid).toBe(true);
+    expect(applyCommand(s, combine.command!, content).ok).toBe(true);
+    expect(s.board[0]!.items).toContain('item.arcane_ward');
+    expect(s.board[0]!.items.length).toBe(cap);
+  });
+
+  it('a drop on empty space (no unit under the cursor) is refused with a reason, and canDragItem agrees', () => {
+    const s = runWithUnits(1);
+    giveItems(s, 'item.blade');
+    expect(itemDropOutcome(s, 0, null, content)).toEqual({ command: null, reason: 'drop an item on a unit', valid: false });
+    expect(itemDropOutcome(s, 5, s.board[0]!.uid, content).reason).toMatch(/no item at bench index/);
+    expect(canDragItem(s, 5)).toBe(false);
+    expect(canDragItem(s, 0)).toBe(true);
+    expect(applyCommand(s, { type: 'startCombat' }, content).ok).toBe(true);
+    expect(canDragItem(s, 0)).toBe(false);
+    expect(itemDropOutcome(s, 0, s.board[0]!.uid, content).reason).toMatch(/requires the planning phase/);
   });
 });
 

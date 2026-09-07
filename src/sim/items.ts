@@ -41,6 +41,33 @@ export interface LootDropDef {
 }
 
 /**
+ * `heldItems` with `itemId` equipped: replaces a combining held component with the recipe result
+ * (net count unchanged), or appends `itemId` as a new held item. Pure — the caller (P0-27's
+ * `equipItem` Command, P0-29's drag-drop paths for the run and sandbox screens) is responsible for
+ * the item-slot cap, since a combine is always cap-neutral and only a plain append needs it.
+ */
+export function combineOrAppend(heldItems: readonly string[], itemId: string, itemsById: Record<string, ItemDef>, recipesByKey: Record<string, string>): string[] {
+  const combine = findCombineTarget(heldItems, itemId, itemsById, recipesByKey);
+  if (!combine) return [...heldItems, itemId];
+  const next = [...heldItems];
+  next[combine.index] = combine.resultId;
+  return next;
+}
+
+/**
+ * Whether `itemId` may be added to `heldItems` under the `cap` item-slot limit: null when it may
+ * (either a free slot, or the drop combines with a held component and is therefore cap-neutral),
+ * else the rejection reason. Shared by `equipItem`'s Command validation (src/sim/commands.ts) and
+ * the sandbox's drag-drop path (src/app/sandboxController.ts, which has no Command log to run
+ * `equipItem` through), so the cap rule cannot drift between the two (code review, P0-29).
+ */
+export function canAddItem(heldItems: readonly string[], itemId: string, itemsById: Record<string, ItemDef>, recipesByKey: Record<string, string>, cap: number): string | null {
+  const combine = findCombineTarget(heldItems, itemId, itemsById, recipesByKey);
+  if (!combine && heldItems.length >= cap) return `unit already holds ${cap} items`;
+  return null;
+}
+
+/**
  * The held item (its index in `heldItems`, and the resulting completed item id) that `itemId`
  * would combine with, or null if no held item is a component with a matching recipe. Returns the
  * first match in array order — a unit is expected to hold at most one uncombined component at a

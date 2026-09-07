@@ -2,7 +2,7 @@
 // All numbers come from content.rules (data/dev/rules.json until SPEC.md).
 import { fight, type FightEndReason, type FightWinner } from './fight.ts';
 import { hashValue } from './hash.ts';
-import { findCombineTarget } from './items.ts';
+import { combineOrAppend } from './items.ts';
 import { createRngStates, Rng, type RngStates, type StreamName } from './rng.ts';
 import { fightRulesFrom, type Content, type Encounter, type EncounterType, type FightRules } from './rules.ts';
 import type { BoardUnit, OwnedUnit, PlacedUnit } from './units.ts';
@@ -501,9 +501,7 @@ export function insertBoardUnit(state: RunState, unit: PlacedUnit): void {
  * for the item-slot cap; this never checks it, since a combine is always cap-neutral.
  */
 export function equipItem(unit: OwnedUnit, itemId: string, content: Content): void {
-  const combine = findCombineTarget(unit.items, itemId, content.itemsById, content.recipesByKey);
-  if (combine) unit.items[combine.index] = combine.resultId;
-  else unit.items.push(itemId);
+  unit.items = combineOrAppend(unit.items, itemId, content.itemsById, content.recipesByKey);
 }
 
 /**

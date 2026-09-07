@@ -89,6 +89,32 @@ describe('sandbox controller', () => {
     expect(c.setup.left[1]!.statOverrides).toEqual({});
   });
 
+  it('dragItemOntoUnit (P0-29) equips a component, combines a matching pair, rejects an unknown id and a full unit, and no-ops during playback', () => {
+    const { c } = make();
+    c.addUnit('left', 'dev.brawler');
+    const cap = content.rules.economy.itemSlots;
+
+    expect(c.dragItemOntoUnit('left', 5, 'item.blade')).toEqual({ ok: false, reason: 'no unit at left[5]' });
+    expect(c.dragItemOntoUnit('left', 0, 'item.nonexistent')).toEqual({ ok: false, reason: 'unknown item id item.nonexistent' });
+
+    expect(c.dragItemOntoUnit('left', 0, 'item.blade')).toEqual({ ok: true, reason: null });
+    expect(c.setup.left[0]!.items).toEqual(['item.blade']);
+    // A matching component combines in place (net-neutral), not a plain append.
+    expect(c.dragItemOntoUnit('left', 0, 'item.blade')).toEqual({ ok: true, reason: null });
+    expect(c.setup.left[0]!.items).toEqual(['item.twin_blade']);
+
+    for (let i = c.setup.left[0]!.items.length; i < cap; i++) c.setItems('left', 0, [...c.setup.left[0]!.items, `filler-${i}`]);
+    expect(c.setup.left[0]!.items.length).toBe(cap);
+    const full = c.dragItemOntoUnit('left', 0, 'item.blade');
+    expect(full.ok).toBe(false);
+    expect(full.reason).toMatch(new RegExp(`already holds ${cap} items`));
+
+    c.addUnit('right', 'dev.brawler');
+    c.runOnce();
+    expect(c.playback).not.toBeNull();
+    expect(c.dragItemOntoUnit('right', 0, 'item.blade')).toEqual({ ok: false, reason: 'cannot equip items during playback' });
+  });
+
   it('setRules merges fight-rule overrides', () => {
     const { c } = make();
     c.setRules({ maxSeconds: 5 });

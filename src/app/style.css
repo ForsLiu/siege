@@ -256,9 +256,20 @@ body {
 }
 
 .shop,
-.bench {
+.bench,
+.item-bench {
   display: flex;
   gap: 6px;
+}
+
+.item-card {
+  min-width: 72px;
+  height: 40px;
+  cursor: grab;
+}
+
+.item-card.item-completed {
+  border-left: 4px solid var(--accent);
 }
 
 .card {

@@ -21,6 +21,9 @@ export interface SandboxUiView {
 export interface SandboxUiCallbacks {
   onAddUnit(side: SandboxSide, defId: string): void;
   onRemoveUnit(side: SandboxSide, index: number): void;
+  /** Mouse-down on an item-palette card (P0-29): the app picks the item up and resolves the drop
+   *  (equip, or combine into a completed item) on the sandbox row it lands on. */
+  onItemDragStart(itemId: string): void;
   /** Click on a row's name (P0-20 inspector); toggles off when the same row is clicked again. */
   onSelectUnit(side: SandboxSide, index: number): void;
   onSetStar(side: SandboxSide, index: number, star: number): void;
@@ -70,6 +73,9 @@ export function createSandboxUi(parent: HTMLElement, cb: SandboxUiCallbacks): Sa
 
   const roster = el('div', 'row sandbox-roster');
   roster.append(el('span', 'label', 'Add:'));
+
+  const itemPalette = el('div', 'row item-palette');
+  itemPalette.append(el('span', 'label', 'Items:'));
 
   const sides = { left: el('div', 'sandbox-side'), right: el('div', 'sandbox-side') };
 
@@ -128,7 +134,7 @@ export function createSandboxUi(parent: HTMLElement, cb: SandboxUiCallbacks): Sa
   const results = el('pre', 'summary sandbox-results');
   results.hidden = true;
 
-  root.append(hud, roster, sides.left, sides.right, rulesRow, runRow, saveRow, results);
+  root.append(hud, roster, itemPalette, sides.left, sides.right, rulesRow, runRow, saveRow, results);
   parent.appendChild(root);
 
   function renderRoster(content: Content): void {
@@ -144,6 +150,17 @@ export function createSandboxUi(parent: HTMLElement, cb: SandboxUiCallbacks): Sa
     }
   }
 
+  /** Drag source for P0-29: mouse-down starts a drag, resolved by main.ts against whatever
+   *  `.sandbox-unit` row the mouse is released over (drop-on-empty-space is a no-op). */
+  function renderItemPalette(content: Content): void {
+    itemPalette.querySelectorAll('.item-card').forEach((n) => n.remove());
+    for (const def of content.items) {
+      const card = el('button', `card item-card item-${def.kind}`, def.name);
+      card.addEventListener('mousedown', () => cb.onItemDragStart(def.id));
+      itemPalette.appendChild(card);
+    }
+  }
+
   function renderSide(side: SandboxSide, content: Content, units: readonly SandboxUnit[], playing: boolean, selected: { side: SandboxSide; index: number } | null): void {
     const container = sides[side];
     container.replaceChildren(el('span', 'label', side === 'left' ? 'Left:' : 'Right:'));
@@ -151,6 +168,8 @@ export function createSandboxUi(parent: HTMLElement, cb: SandboxUiCallbacks): Sa
     units.forEach((u, index) => {
       const def = content.unitsById[u.defId];
       const row = el('div', 'row sandbox-unit');
+      row.dataset['side'] = side;
+      row.dataset['index'] = String(index);
       row.classList.toggle('selected', selected !== null && selected.side === side && selected.index === index);
       const name = el('span', 'card-name', def?.name ?? u.defId);
       name.addEventListener('click', () => cb.onSelectUnit(side, index));
@@ -236,6 +255,7 @@ export function createSandboxUi(parent: HTMLElement, cb: SandboxUiCallbacks): Sa
     if (lastContent !== view.content) {
       lastContent = view.content;
       renderRoster(view.content);
+      renderItemPalette(view.content);
     }
     hudMsg.textContent = view.message;
     renderSide('left', view.content, sideList(view.setup, 'left'), view.isPlaying, view.selected);

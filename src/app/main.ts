@@ -11,12 +11,13 @@ import { fight, type FightResult } from '../sim/fight.ts';
 import type { Cell } from '../sim/hex.ts';
 import { isPlayerCell, mirrorCell } from '../sim/hex.ts';
 import { fightRulesFrom } from '../sim/rules.ts';
-import { boardUnitAt, currentEncounter, shopTierCount } from '../sim/run.ts';
+import { boardUnitAt, currentEncounter, shopTierCount, type RunState } from '../sim/run.ts';
+import type { SandboxSide } from '../sim/sandbox.ts';
 import { createPauseScreen, createResultsScreen, createTitleScreen } from '../ui/screens.ts';
 import { createRunUi } from '../ui/runUi.ts';
 import { createSandboxUi } from '../ui/sandboxUi.ts';
 import { createInspectorUi } from '../ui/inspectorUi.ts';
-import { canDrag, dropOutcome, type DropOutcome } from './drag.ts';
+import { canDrag, canDragItem, dropOutcome, itemDropOutcome, type DropOutcome } from './drag.ts';
 import { hotkeyAction, isViewAction } from './hotkeys.ts';
 import { inspectorModel, rangeRings, sandboxPreviewModel, shopPreviewModel, type InspectorModel } from './inspectorModel.ts';
 import type { PlaybackState } from './playback.ts';
@@ -55,6 +56,11 @@ let devFightFinalFrame: UnitSnapshot[] = [];
 let drag: { uid: number; moved: boolean; cell: Cell | null; drop: DropOutcome | null } | null = null;
 /** Set when a drag consumed the gesture, so the trailing `click` does not act on it too. */
 let suppressClick = false;
+/** Item being dragged with the mouse (P0-29): a run item-bench slot, or a sandbox palette item
+ *  id (the sandbox has no bench, so any item def can always be picked up again). Resolved on
+ *  mouseup against whatever unit/row the cursor is over; no live hover tracking (unlike unit
+ *  drag) since neither screen needs an in-flight highlight to satisfy the acceptance criteria. */
+let itemDrag: { kind: 'run'; benchIndex: number } | { kind: 'sandbox'; itemId: string } | null = null;
 
 // ---- screens ----
 function emit(ev: ScreenEvent): void {
@@ -133,6 +139,9 @@ const runUi = createRunUi(app, {
   onDragStart(uid) {
     startDrag(uid);
   },
+  onItemDragStart(benchIndex) {
+    startItemDrag({ kind: 'run', benchIndex });
+  },
   onSpeed(s) {
     speed = s;
     refreshUi();
@@ -159,6 +168,9 @@ const sandboxUi = createSandboxUi(app, {
   },
   onRemoveUnit(side, index) {
     sandboxController.removeUnit(side, index);
+  },
+  onItemDragStart(itemId) {
+    startItemDrag({ kind: 'sandbox', itemId });
   },
   onSelectUnit(side, index) {
     sandboxController.selectUnit(side, index);
@@ -208,6 +220,7 @@ const sandboxUi = createSandboxUi(app, {
 function syncScreens(): void {
   const run = controller.run;
   drag = null;
+  itemDrag = null;
   // A screen change leaves no shop card under the pointer (or none of this shape), so a stale
   // hover preview must not survive into whatever screen comes next (code review on P0-20).
   hoveredShopDefId = null;
@@ -352,6 +365,7 @@ function cellFromEvent(e: MouseEvent): Cell | null {
  * never moves is a click, and the click handler owns it. Drops are resolved on mouseup.
  */
 function startDrag(uid: number): void {
+  if (itemDrag) return;
   const run = controller.run;
   if (!dragAllowed() || !run || !canDrag(run, uid)) return;
   drag = { uid, moved: false, cell: null, drop: null };
@@ -379,6 +393,63 @@ function endDrag(cell: Cell | null): void {
   apply(boardDrop(run, d.uid, cell, content));
 }
 
+/** Picks an item up (P0-29): a run item-bench card or a sandbox palette card. Unlike unit drag
+ *  its mousedown target is never the canvas, so the browser never fires a trailing native `click`
+ *  on the drop target for this gesture — no `suppressClick` bookkeeping is needed. */
+function startItemDrag(d: NonNullable<typeof itemDrag>): void {
+  if (drag) return;
+  if (d.kind === 'run') {
+    const run = controller.run;
+    if (!dragAllowed() || !run || !canDragItem(run, d.benchIndex)) return;
+  } else if (screen.screen !== 'sandbox' || screen.paused || sandboxController.playback) {
+    return;
+  }
+  itemDrag = d;
+}
+
+/** The unit uid a run item-drop landed on: a board cell (via the canvas) or a bench card
+ *  (via its `data-uid`, P0-29). Neither is set when the drop missed both. */
+function itemDropTargetUid(e: MouseEvent, run: RunState): number | null {
+  if (e.target === canvas) {
+    const cell = cellFromEvent(e);
+    const occupant = cell ? boardUnitAt(run, cell.col, cell.row) : null;
+    return occupant?.uid ?? null;
+  }
+  const card = e.target instanceof HTMLElement ? e.target.closest<HTMLElement>('.bench-card') : null;
+  const uid = card?.dataset['uid'];
+  return uid !== undefined ? Number(uid) : null;
+}
+
+/** The sandbox row a drop landed on, via its `data-side`/`data-index` (P0-29). */
+function sandboxDropTarget(e: MouseEvent): { side: SandboxSide; index: number } | null {
+  const row = e.target instanceof HTMLElement ? e.target.closest<HTMLElement>('.sandbox-unit') : null;
+  const side = row?.dataset['side'];
+  const index = row?.dataset['index'];
+  if (side !== 'left' && side !== 'right') return null;
+  if (index === undefined) return null;
+  return { side, index: Number(index) };
+}
+
+function endItemDrag(e: MouseEvent): void {
+  const d = itemDrag;
+  itemDrag = null;
+  if (!d) return;
+  if (d.kind === 'run') {
+    const run = controller.run;
+    if (!run || !dragAllowed()) return;
+    const outcome = itemDropOutcome(run, d.benchIndex, itemDropTargetUid(e, run), content);
+    if (outcome.command) dispatch(outcome.command);
+    else if (outcome.reason) controller.message = outcome.reason;
+    refreshUi();
+    return;
+  }
+  if (screen.screen !== 'sandbox' || screen.paused || sandboxController.playback) return;
+  const target = sandboxDropTarget(e);
+  const result = target ? sandboxController.dragItemOntoUnit(target.side, target.index, d.itemId) : { ok: false, reason: 'drop an item on a unit' };
+  if (!result.ok) sandboxController.message = result.reason ?? '';
+  refreshUi();
+}
+
 canvas.addEventListener('mousemove', (e) => {
   hover = cellFromEvent(e);
   const run = controller.run;
@@ -404,6 +475,10 @@ canvas.addEventListener('mousedown', (e) => {
   if (occupant) startDrag(occupant.uid);
 });
 window.addEventListener('mouseup', (e) => {
+  if (itemDrag) {
+    endItemDrag(e);
+    return;
+  }
   if (!drag) return;
   const target = e.target === canvas ? cellFromEvent(e) : null;
   endDrag(target);

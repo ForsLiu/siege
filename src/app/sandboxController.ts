@@ -6,6 +6,7 @@
 // `SandboxPersistence`, wired up by main.ts only inside its existing DEV-guarded dynamic import.
 import { fight, type FightResult } from '../sim/fight.ts';
 import type { Cell } from '../sim/hex.ts';
+import { canAddItem, combineOrAppend } from '../sim/items.ts';
 import type { Content } from '../sim/rules.ts';
 import { buildSandboxFight, runSandbox, type SandboxResult, type SandboxRuleOverrides, type SandboxSetup, type SandboxSide, type SandboxUnit } from '../sim/sandbox.ts';
 import type { StatBlock, StatName } from '../sim/stats.ts';
@@ -134,6 +135,24 @@ export class SandboxController {
 
   setItems(side: SandboxSide, index: number, items: string[]): void {
     this.patchUnit(side, index, { items });
+  }
+
+  /**
+   * Drop `itemId` onto a sandbox unit (P0-29): the sandbox has no item bench or Command log, so
+   * this mirrors `equipItem`'s combine-or-append rule and its item-slot cap directly over the
+   * unit's own `items` array, rather than going through a Command.
+   */
+  dragItemOntoUnit(side: SandboxSide, index: number, itemId: string): { ok: boolean; reason: string | null } {
+    if (this.play) return { ok: false, reason: 'cannot equip items during playback' };
+    const unit = this.setup[side][index];
+    if (!unit) return { ok: false, reason: `no unit at ${side}[${index}]` };
+    const { itemsById, recipesByKey } = this.deps.content;
+    if (!Object.hasOwn(itemsById, itemId)) return { ok: false, reason: `unknown item id ${itemId}` };
+    const cap = this.deps.content.rules.economy.itemSlots;
+    const reason = canAddItem(unit.items, itemId, itemsById, recipesByKey, cap);
+    if (reason) return { ok: false, reason };
+    this.setItems(side, index, combineOrAppend(unit.items, itemId, itemsById, recipesByKey));
+    return { ok: true, reason: null };
   }
 
   setStatOverride(side: SandboxSide, index: number, stat: StatName, value: number | null): void {
