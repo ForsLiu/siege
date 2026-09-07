@@ -8,6 +8,7 @@ import {
   boardUnitAt,
   countCopies,
   endRun,
+  equipItem,
   findUnit,
   freeBenchSlot,
   insertBoardUnit,
@@ -22,6 +23,7 @@ import {
 } from './run.ts';
 import { refreshShop, copiesForStar, addXp, poolCapacity } from './run.ts';
 import { applyDevCommand, isDevCommand, validateDevCommand, type DevCommand, type DevCommandType } from './devCommands.ts';
+import { findCombineTarget } from './items.ts';
 import type { OwnedUnit, PlacedUnit } from './units.ts';
 
 export type { DevCommand, DevCommandType };
@@ -35,6 +37,7 @@ export type PlayerCommand =
   | { type: 'reroll' }
   | { type: 'levelUp' }
   | { type: 'pickAugment'; augmentId: string }
+  | { type: 'equipItem'; uid: number; benchIndex: number }
   | { type: 'startCombat' }
   | { type: 'nextRound' }
   | { type: 'abandon' };
@@ -44,7 +47,7 @@ export type Command = PlayerCommand | DevCommand;
 
 export type PlayerCommandType = PlayerCommand['type'];
 export type CommandType = Command['type'];
-export const COMMAND_TYPES: readonly PlayerCommandType[] = ['buy', 'sell', 'place', 'bench', 'swap', 'reroll', 'levelUp', 'pickAugment', 'startCombat', 'nextRound', 'abandon'];
+export const COMMAND_TYPES: readonly PlayerCommandType[] = ['buy', 'sell', 'place', 'bench', 'swap', 'reroll', 'levelUp', 'pickAugment', 'equipItem', 'startCombat', 'nextRound', 'abandon'];
 
 export type CommandResult = { ok: true; state: RunState; fight: FightResult | null } | { ok: false; reason: string };
 
@@ -126,6 +129,18 @@ export function validateCommand(state: RunState, cmd: Command, content: Content)
       if (!Object.hasOwn(content.augmentsById, cmd.augmentId)) return `unknown augment id ${String(cmd.augmentId)}`;
       if (state.augmentOffer === null) return 'no augment offer is pending';
       if (!state.augmentOffer.includes(cmd.augmentId)) return `${cmd.augmentId} is not in the current offer`;
+      return null;
+    }
+    case 'equipItem': {
+      if (!isInt(cmd.uid)) return 'invalid uid';
+      if (!isInt(cmd.benchIndex) || cmd.benchIndex < 0 || cmd.benchIndex >= state.itemBench.length) return 'invalid item bench index';
+      const found = findUnit(state, cmd.uid);
+      if (!found) return `no unit with uid ${cmd.uid}`;
+      const itemId = state.itemBench[cmd.benchIndex] as string;
+      // A combine (a held component + this item -> a completed item) never grows the item
+      // count, so it is exempt from the slot cap; only a plain add needs the free-slot check.
+      const combine = findCombineTarget(found.unit.items, itemId, content.itemsById, content.recipesByKey);
+      if (!combine && found.unit.items.length >= eco.itemSlots) return `unit already holds ${eco.itemSlots} items`;
       return null;
     }
     case 'startCombat':
@@ -235,6 +250,13 @@ export function applyCommand(state: RunState, cmd: Command, content: Content): C
       state.augmentOffer = null;
       return { ok: true, state, fight: null };
     }
+    case 'equipItem': {
+      const found = findUnit(state, cmd.uid);
+      if (!found) throw new Error('equipItem: unit vanished');
+      const itemId = state.itemBench.splice(cmd.benchIndex, 1)[0] as string;
+      equipItem(found.unit, itemId, content);
+      return { ok: true, state, fight: null };
+    }
     case 'startCombat': {
       state.phase = 'combat';
       const { result } = resolveCombat(state, content);
@@ -300,6 +322,12 @@ export function legalCommands(state: RunState, content: Content): PlayerCommand[
   if (state.gold >= eco.rerollCost) out.push({ type: 'reroll' });
   if (state.level < eco.maxLevel && state.gold >= eco.xpCost) out.push({ type: 'levelUp' });
   if (state.augmentOffer) for (const augmentId of state.augmentOffer) out.push({ type: 'pickAugment', augmentId });
+  for (let benchIndex = 0; benchIndex < state.itemBench.length; benchIndex++) {
+    for (const u of units) {
+      const cmd: PlayerCommand = { type: 'equipItem', uid: u.uid, benchIndex };
+      if (validateCommand(state, cmd, content) === null) out.push(cmd);
+    }
+  }
   out.push({ type: 'startCombat' });
   return out;
 }
@@ -324,12 +352,14 @@ export function checkInvariants(state: RunState, content: Content): string[] {
     if (cells.has(k)) problems.push(`two units at ${k}`);
     cells.add(k);
     if (u.star < 1 || u.star > eco.maxStar) problems.push(`unit ${u.uid} star ${u.star}`);
+    if (u.items.length > eco.itemSlots) problems.push(`unit ${u.uid} holds ${u.items.length} items > cap ${eco.itemSlots}`);
   }
   for (const u of state.bench) {
     if (!u) continue;
     if (uids.has(u.uid)) problems.push(`duplicate uid ${u.uid}`);
     uids.add(u.uid);
     if (u.star < 1 || u.star > eco.maxStar) problems.push(`unit ${u.uid} star ${u.star}`);
+    if (u.items.length > eco.itemSlots) problems.push(`unit ${u.uid} holds ${u.items.length} items > cap ${eco.itemSlots}`);
   }
   for (let i = 1; i < state.board.length; i++) {
     if ((state.board[i] as PlacedUnit).uid < (state.board[i - 1] as PlacedUnit).uid) problems.push('board not sorted by uid');

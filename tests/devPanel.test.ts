@@ -37,7 +37,7 @@ describe('dev panel model', () => {
   it('every button dispatches a command the sim accepts on a fresh dev run', () => {
     // Ids the panel cannot default (no augment/item content yet) are filled in here; every
     // other button must be legal exactly as the panel emits it.
-    for (const btn of devPanelButtons({ ...model(), augmentId: 'aug.iron_skin', itemId: 'dev.item.x' })) {
+    for (const btn of devPanelButtons({ ...model(), augmentId: 'aug.iron_skin', itemId: 'item.blade' })) {
       const s = devRun();
       expect(validateCommand(s, btn.command, content), `${btn.id}: ${btn.label}`).toBeNull();
       const res = applyCommand(s, btn.command, content);
@@ -47,7 +47,7 @@ describe('dev panel model', () => {
     }
   });
   it('every button is rejected with a reason in a production run', () => {
-    for (const btn of devPanelButtons({ ...model(), augmentId: 'aug.iron_skin', itemId: 'dev.item.x' })) {
+    for (const btn of devPanelButtons({ ...model(), augmentId: 'aug.iron_skin', itemId: 'item.blade' })) {
       const s = createRun(1, content);
       const before = JSON.stringify(s);
       const res = applyCommand(s, btn.command, content);
@@ -118,7 +118,7 @@ describe('dev panel model', () => {
     const s = devRun();
     for (const [id, pattern] of [
       ['addAugment', /unknown augment id/],
-      ['giveItem', /invalid item id/],
+      ['giveItem', /unknown item id/],
     ] as const) {
       const cmd = devPanelButtons(m).find((b) => b.id === id)!.command;
       expect(validateCommand(s, cmd, content)).toMatch(pattern);

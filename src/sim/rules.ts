@@ -1,6 +1,7 @@
 // Rule/content shapes the sim consumes. Values come from /data (validated by src/data).
 import type { Effect, ProjectileDef } from './effects.ts';
 import type { BoardConfig } from './hex.ts';
+import type { ItemDef, RecipeDef } from './items.ts';
 import type { TraitDef } from './traits.ts';
 import type { BoardUnit, UnitDef } from './units.ts';
 
@@ -40,6 +41,8 @@ export interface EconomyRules {
   sellRefund: number;
   maxStar: number;
   mergeCopies: number;
+  /** Item slots per unit (P0-27). */
+  itemSlots: number;
   /** Copies of each unit in the shared pool, by cost tier (string keys, JSON). */
   poolSize: Record<string, number>;
   /** shopOdds[level] = percentages per cost tier (index 0 = cost 1); sums to 100. */
@@ -97,6 +100,7 @@ export interface FightRules {
   units: Record<string, UnitDef>;
   projectiles: Record<string, ProjectileDef>;
   traits: Record<string, TraitDef>;
+  items: Record<string, ItemDef>;
   /**
    * Dev cheat (`dev:invinciblePieces`): damage cannot take a side's units below 1 hp.
    * Absent in production runs; it is an argument like any other, so fights stay pure and
@@ -125,6 +129,11 @@ export interface Content {
   augmentsById: Record<string, AugmentDef>;
   traits: TraitDef[];
   traitsById: Record<string, TraitDef>;
+  items: ItemDef[];
+  itemsById: Record<string, ItemDef>;
+  recipes: RecipeDef[];
+  /** Recipe lookup, keyed by `recipeKey(componentA, componentB)`, value = the completed item id. */
+  recipesByKey: Record<string, string>;
   /** sha-256 of the canonical concatenation of every content file. */
   contentHash: string;
 }
@@ -137,5 +146,6 @@ export function fightRulesFrom(content: Content): FightRules {
     units: content.unitsById,
     projectiles: content.projectilesById,
     traits: content.traitsById,
+    items: content.itemsById,
   };
 }

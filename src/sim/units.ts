@@ -29,12 +29,16 @@ export interface UnitDef {
   // the schema and here together when SPEC.md defines them.
 }
 
-/** A unit placed on a board, as authored in data (owner-half coordinates). */
+/** A unit placed on a board, as authored in data (owner-half coordinates). Optional (not just
+ *  defaulted in the schema) so the countless hand-built `BoardUnit` literals across the test
+ *  suite and authored data stay valid without an `items` key (P0-27): equipped items are a
+ *  player-run concept, not something authored data or most fight-level tests need to state. */
 export interface BoardUnit {
   defId: string;
   star: number;
   col: number;
   row: number;
+  items?: string[];
 }
 
 /** A unit owned by the player during a run. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeContentHash, loadContent, validateFile, type RawContentFiles } from '../src/data/loader.ts';
 import { kindForPath } from '../src/data/manifest.ts';
-import { AugmentDefSchema, EffectSchema, EncounterSchema, StatBlockSchema, TraitDefSchema, UnitDefSchema } from '../src/data/schemas.ts';
+import { AugmentDefSchema, EffectSchema, EncounterSchema, ItemDefSchema, RecipeDefSchema, StatBlockSchema, TraitDefSchema, UnitDefSchema } from '../src/data/schemas.ts';
 import { devContent, rawDevContent } from './helpers.ts';
 
 function clone<T>(v: T): T {
@@ -15,7 +15,7 @@ describe('data pipeline', () => {
     expect(c.encounters.length).toBeGreaterThan(0);
     expect(c.contentHash).toMatch(/^[0-9a-f]{64}$/);
     const raw = rawDevContent();
-    for (const kind of ['board', 'rules', 'units', 'encounters', 'augments', 'traits'] as const) expect(validateFile(kind, raw[kind]).ok, kind).toBe(true);
+    for (const kind of ['board', 'rules', 'units', 'encounters', 'augments', 'traits', 'items'] as const) expect(validateFile(kind, raw[kind]).ok, kind).toBe(true);
   });
 
   it('rejects unknown keys', () => {
@@ -138,6 +138,47 @@ describe('data pipeline', () => {
     expect(TraitDefSchema.safeParse({ id: 'x', name: 'x', description: 'x', teamWide: false, breakpoints: [validBreakpoint, validBreakpoint] }).success).toBe(false); // equal counts, not strictly increasing
     expect(TraitDefSchema.safeParse({ id: 'x', name: 'x', description: 'x', teamWide: false, breakpoints: [{ ...validBreakpoint, count: 4 }, validBreakpoint] }).success).toBe(false); // decreasing
     expect(TraitDefSchema.safeParse({ id: 'x', name: 'x', description: 'x', teamWide: false, breakpoints: [validBreakpoint] }).success).toBe(true);
+  });
+
+  it('items and recipes (P0-27): duplicate item id, unknown projectile ref, and every recipe referential-integrity check are rejected', () => {
+    const base = rawDevContent();
+
+    const dup = clone(base);
+    const items = (dup.items as { items: { id: string }[] }).items;
+    items.push({ ...items[0]! });
+    expect(() => loadContent(dup)).toThrow(/duplicate item id/);
+
+    const badRef = clone(base);
+    (badRef.items as { items: { effects: unknown[] }[] }).items[0]!.effects = [{ type: 'spawnProjectile', ref: 'ghost.does.not.exist', target: 'self' }];
+    expect(() => loadContent(badRef)).toThrow(/unknown projectile ref/);
+
+    const unknownComponent = clone(base);
+    (unknownComponent.items as { recipes: { components: string[]; result: string }[] }).recipes.push({ components: ['item.does_not_exist', 'item.blade'], result: 'item.twin_blade' });
+    expect(() => loadContent(unknownComponent)).toThrow(/unknown component/);
+
+    const unknownResult = clone(base);
+    (unknownResult.items as { recipes: { components: string[]; result: string }[] }).recipes.push({ components: ['item.blade', 'item.tome'], result: 'item.does_not_exist' });
+    expect(() => loadContent(unknownResult)).toThrow(/unknown result/);
+
+    const completedAsComponent = clone(base);
+    (completedAsComponent.items as { recipes: { components: string[]; result: string }[] }).recipes.push({ components: ['item.twin_blade', 'item.chain'], result: 'item.arcane_ward' });
+    expect(() => loadContent(completedAsComponent)).toThrow(/not 'component'/);
+
+    const componentAsResult = clone(base);
+    (componentAsResult.items as { recipes: { components: string[]; result: string }[] }).recipes.push({ components: ['item.blade', 'item.tome'], result: 'item.chain' });
+    expect(() => loadContent(componentAsResult)).toThrow(/not 'completed'/);
+
+    const dupRecipe = clone(base);
+    // Reversed order of an existing recipe's pair: still the same sorted-pair key, so this must
+    // collide, proving the duplicate check is genuinely order-independent, not just exact-match.
+    const existing = (base.items as { recipes: { components: [string, string]; result: string }[] }).recipes[0]!;
+    (dupRecipe.items as { recipes: { components: string[]; result: string }[] }).recipes.push({ components: [existing.components[1], existing.components[0]], result: existing.result });
+    expect(() => loadContent(dupRecipe)).toThrow(/duplicate recipe/);
+
+    expect(ItemDefSchema.safeParse({ id: 'x', name: 'x', kind: 'component', effects: [] }).success).toBe(true);
+    expect(ItemDefSchema.safeParse({ id: 'x', name: 'x', kind: 'gizmo', effects: [] }).success).toBe(false);
+    expect(RecipeDefSchema.safeParse({ components: ['a', 'b'], result: 'c' }).success).toBe(true);
+    expect(RecipeDefSchema.safeParse({ components: ['a'], result: 'c' }).success).toBe(false);
   });
 
   it('content hash is stable across key order and whitespace and changes when a value changes', () => {

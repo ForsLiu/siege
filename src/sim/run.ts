@@ -2,6 +2,7 @@
 // All numbers come from content.rules (data/dev/rules.json until SPEC.md).
 import { fight, type FightEndReason, type FightWinner } from './fight.ts';
 import { hashValue } from './hash.ts';
+import { findCombineTarget } from './items.ts';
 import { createRngStates, Rng, type RngStates, type StreamName } from './rng.ts';
 import { fightRulesFrom, type Content, type Encounter, type EncounterType, type FightRules } from './rules.ts';
 import type { BoardUnit, OwnedUnit, PlacedUnit } from './units.ts';
@@ -95,7 +96,8 @@ export interface RunState {
   augments: string[];
   /** Ids offered on the current `augment`-type round; null when none is pending. */
   augmentOffer: string[] | null;
-  /** Item ids on the item bench; `dev:giveItem` writes here until P0-27 owns it. */
+  /** Item ids on the item bench (P0-27): `equipItem` removes one to equip it; `dev:giveItem`
+   *  and encounter loot (P0-28) add to it. */
   itemBench: string[];
   dev: DevFlags;
   /** Round-boundary hashes: [0] after creation, then one per nextRound, plus one at run end. */
@@ -477,6 +479,18 @@ export function insertBoardUnit(state: RunState, unit: PlacedUnit): void {
 }
 
 /**
+ * Equip `itemId` onto `unit`: combines with a held component through the recipe table when one
+ * matches (net item count unchanged — the held component is replaced by the completed item), or
+ * else appends as a new item (P0-27). The caller (`equipItem` command validation) is responsible
+ * for the item-slot cap; this never checks it, since a combine is always cap-neutral.
+ */
+export function equipItem(unit: OwnedUnit, itemId: string, content: Content): void {
+  const combine = findCombineTarget(unit.items, itemId, content.itemsById, content.recipesByKey);
+  if (combine) unit.items[combine.index] = combine.resultId;
+  else unit.items.push(itemId);
+}
+
+/**
  * Merge `mergeCopies` copies of (defId, star) into one unit of star + 1, chaining upward.
  * The kept unit is the lowest-uid copy on the board, else the lowest-uid copy on the bench.
  * Bench copies are consumed before board copies. Returns the number of merges performed.
@@ -525,7 +539,7 @@ export function resolveCombat(state: RunState, content: Content): CombatOutcome 
   const encounter = currentEncounter(state, content);
   if (!encounter) throw new Error(`resolveCombat: no encounter for round ${state.round}`);
   const seed = withRng(state, 'combat', (rng) => rng.nextU32());
-  const left: BoardUnit[] = state.board.map((u) => ({ defId: u.defId, star: u.star, col: u.col, row: u.row }));
+  const left: BoardUnit[] = state.board.map((u) => ({ defId: u.defId, star: u.star, col: u.col, row: u.row, items: u.items }));
   const rules = fightRulesFrom(content);
   // dev:invinciblePieces keeps the player's units above 0 hp for this fight (dev builds only).
   if (state.dev.invinciblePieces) rules.invincible = { left: true, right: false };

@@ -59,9 +59,8 @@ export function isDevCommand<T extends { type: string }>(cmd: T): cmd is T & Dev
 }
 
 /**
- * Item ids are free-form until P0-27 defines the content (QUESTIONS.md P0-15-03); `dev:spawnUnit`
- * also uses this as a pre-filter before its real `unitsById` lookup. An input bound, not a
- * tuning number: TODO drop the item-id use once P0-27 replaces the shape check with a lookup.
+ * `dev:spawnUnit`'s `defId` pre-filter before its real `unitsById` lookup. An input bound, not a
+ * tuning number.
  */
 const MAX_ID_LENGTH = 64;
 
@@ -128,8 +127,7 @@ export function validateDevCommand(state: RunState, cmd: DevCommand, content: Co
       return null;
     }
     case 'dev:giveItem':
-      // P0-27 replaces this with a lookup in the item table.
-      if (!isId(cmd.itemId)) return 'invalid item id';
+      if (!Object.hasOwn(content.itemsById, cmd.itemId)) return `unknown item id ${String(cmd.itemId)}`;
       return null;
     default: {
       const never: never = cmd;

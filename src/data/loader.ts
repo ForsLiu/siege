@@ -3,12 +3,13 @@
 import type { Effect, ProjectileDef } from '../sim/effects.ts';
 import { canonicalJson } from '../sim/hash.ts';
 import { inBounds, isPlayerCell, type BoardConfig } from '../sim/hex.ts';
+import { recipeKey, type ItemDef, type RecipeDef } from '../sim/items.ts';
 import type { AugmentDef, Content, Encounter, Rules } from '../sim/rules.ts';
 import type { SandboxSetup } from '../sim/sandbox.ts';
 import type { TraitDef } from '../sim/traits.ts';
 import type { BoardUnit, UnitDef } from '../sim/units.ts';
 import { sha256Hex } from './sha256.ts';
-import { AugmentsFileSchema, BoardConfigSchema, BoardFileSchema, EncountersFileSchema, FILE_SCHEMAS, RulesSchema, SandboxSetupFileSchema, TraitsFileSchema, UnitsFileSchema, type DataFileKind } from './schemas.ts';
+import { AugmentsFileSchema, BoardConfigSchema, BoardFileSchema, EncountersFileSchema, FILE_SCHEMAS, ItemsFileSchema, RulesSchema, SandboxSetupFileSchema, TraitsFileSchema, UnitsFileSchema, type DataFileKind } from './schemas.ts';
 
 export interface RawContentFiles {
   board: unknown;
@@ -17,6 +18,7 @@ export interface RawContentFiles {
   encounters: unknown;
   augments: unknown;
   traits: unknown;
+  items: unknown;
 }
 
 export class ContentError extends Error {
@@ -78,6 +80,7 @@ export function loadContent(raw: RawContentFiles): Content {
   const encFile = parseOrThrow<{ encounters: Encounter[] }>('encounters', EncountersFileSchema, raw.encounters);
   const augmentsFile = parseOrThrow<{ augments: AugmentDef[] }>('augments', AugmentsFileSchema, raw.augments);
   const traitsFile = parseOrThrow<{ traits: TraitDef[] }>('traits', TraitsFileSchema, raw.traits);
+  const itemsFile = parseOrThrow<{ items: ItemDef[]; recipes: RecipeDef[] }>('items', ItemsFileSchema, raw.items);
 
   const tierKeys = Object.keys(rules.economy.poolSize)
     .map((k) => Number.parseInt(k, 10))
@@ -169,8 +172,40 @@ export function loadContent(raw: RawContentFiles): Content {
     }
   }
 
-  const contentHash = computeContentHash({ board: raw.board, rules: raw.rules, units: raw.units, encounters: raw.encounters, augments: raw.augments, traits: raw.traits });
-  return { board, rules, units, unitsById, projectiles, projectilesById, encounters, augments, augmentsById, traits, traitsById, contentHash };
+  const items = [...itemsFile.items].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const itemsById: Record<string, ItemDef> = {};
+  for (const it of items) {
+    if (itemsById[it.id]) throw new ContentError('items', `duplicate item id ${it.id}`);
+    itemsById[it.id] = it;
+  }
+  for (const it of items) {
+    for (const ref of projectileRefs(it.effects)) {
+      if (!projectilesById[ref]) throw new ContentError('items', `item ${it.id}: unknown projectile ref ${ref}`);
+    }
+  }
+  // Every recipe's components must be real `component`-kind items and its result a real
+  // `completed`-kind item; the sorted-pair key is order-independent by construction (items.ts),
+  // and a second recipe landing on the same key (any order, including reversed) is ambiguous.
+  const recipes = [...itemsFile.recipes].sort((a, b) => (recipeKey(a.components[0], a.components[1]) < recipeKey(b.components[0], b.components[1]) ? -1 : 1));
+  const recipesByKey: Record<string, string> = {};
+  for (const r of recipes) {
+    const [a, b] = r.components;
+    const compA = itemsById[a];
+    const compB = itemsById[b];
+    if (!compA) throw new ContentError('items', `recipe references unknown component ${a}`);
+    if (!compB) throw new ContentError('items', `recipe references unknown component ${b}`);
+    if (compA.kind !== 'component') throw new ContentError('items', `recipe component ${a} is kind '${compA.kind}', not 'component'`);
+    if (compB.kind !== 'component') throw new ContentError('items', `recipe component ${b} is kind '${compB.kind}', not 'component'`);
+    const result = itemsById[r.result];
+    if (!result) throw new ContentError('items', `recipe references unknown result ${r.result}`);
+    if (result.kind !== 'completed') throw new ContentError('items', `recipe result ${r.result} is kind '${result.kind}', not 'completed'`);
+    const key = recipeKey(a, b);
+    if (recipesByKey[key]) throw new ContentError('items', `duplicate recipe for ${a} + ${b}`);
+    recipesByKey[key] = r.result;
+  }
+
+  const contentHash = computeContentHash({ board: raw.board, rules: raw.rules, units: raw.units, encounters: raw.encounters, augments: raw.augments, traits: raw.traits, items: raw.items });
+  return { board, rules, units, unitsById, projectiles, projectilesById, encounters, augments, augmentsById, traits, traitsById, items, itemsById, recipes, recipesByKey, contentHash };
 }
 
 /** Every effect a unit can run: its ability, all its hooks and its aura. */

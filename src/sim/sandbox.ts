@@ -14,7 +14,9 @@ export interface SandboxUnit {
   star: number;
   col: number;
   row: number;
-  /** Placeholder until P0-27 items land: carried through, applied to no stat (QUESTIONS.md P0-17-01). */
+  /** Item ids, applied through `fight.ts`'s loadout phase like a real run's equipped items
+   *  (P0-27); authored directly here, with no combine/cap logic — the sandbox is a raw fight-config
+   *  testbed, not a shop simulation. */
   items: string[];
   /** Direct overrides of the unit's base stats at its star, keyed by any name in STAT_NAMES. */
   statOverrides: Partial<StatBlock>;
@@ -81,7 +83,7 @@ function buildSide(content: Content, side: SandboxSide, units: readonly SandboxU
     const id = instanceId(side, index);
     const stats = base.stats.map((block, i) => (i === starIdx ? { ...block, ...u.statOverrides } : block));
     defs[id] = { ...base, id, stats };
-    boardUnits.push({ defId: id, star: u.star, col: u.col, row: u.row });
+    boardUnits.push({ defId: id, star: u.star, col: u.col, row: u.row, items: u.items });
     owners.set(id, { side, index, defId: u.defId });
   });
   return { boardUnits, defs, owners };
@@ -100,6 +102,7 @@ export function buildSandboxFight(content: Content, setup: SandboxSetup): Sandbo
     units: { ...l.defs, ...r.defs },
     projectiles: content.projectilesById,
     traits: content.traitsById,
+    items: content.itemsById,
   };
   const owners = new Map([...l.owners, ...r.owners]);
   return { left: l.boardUnits, right: r.boardUnits, rules, owners };

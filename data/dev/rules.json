@@ -31,6 +31,7 @@
     "sellRefund": 1,
     "maxStar": 3,
     "mergeCopies": 3,
+    "itemSlots": 3,
     "poolSize": { "1": 29, "2": 22, "3": 18, "4": 12, "5": 10 },
     "shopOdds": {
       "1": [100, 0, 0, 0, 0],

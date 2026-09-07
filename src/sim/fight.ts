@@ -27,6 +27,8 @@ export interface FightUnit extends StatCarrier {
   maxHp: number;
   mana: number;
   alive: boolean;
+  /** Equipped item ids (P0-27), carried through from `BoardUnit.items` for the loadout phase. */
+  items: string[];
   /** uid of the current target, 0 when none. */
   target: number;
   nextAttackTick: number;
@@ -184,6 +186,7 @@ class FightSim implements EffectHost<FightUnit> {
         maxHp: 0,
         mana: 0,
         alive: true,
+        items: [...(bu.items ?? [])],
         target: 0,
         nextAttackTick: 0,
         nextMoveTick: 0,
@@ -720,6 +723,16 @@ class FightSim implements EffectHost<FightUnit> {
     for (const u of this.units) {
       const effects = u.team === 0 ? this.rules.startEffects?.left : this.rules.startEffects?.right;
       if (effects && effects.length > 0) runEffects(this, effects, u, null, 'augment');
+    }
+    // Equipped-item effects (P0-27): same loadout phase as traits/augments, one modifier source
+    // per item id (`item:<itemId>`, not a single shared string) so two different items on the
+    // same unit stack as separate sources per the stat-stacking rule, and a stat mod on a
+    // component still applies even if it never combines into a completed item.
+    for (const u of this.units) {
+      for (const itemId of u.items) {
+        const def = this.rules.items[itemId];
+        if (def) runEffects(this, def.effects, u, null, `item:${itemId}`);
+      }
     }
     // onRoundStart is the pre-combat setup trigger: it fires once, before any onCombatStart
     // hook, so data can separate "when the round begins" from "when combat begins".

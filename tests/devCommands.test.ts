@@ -28,7 +28,7 @@ const SAMPLE: Record<string, DevCommand> = {
   'dev:addAugment': { type: 'dev:addAugment', augmentId: 'aug.iron_skin' },
   'dev:openShop': { type: 'dev:openShop', tier: 1 },
   'dev:spawnUnit': { type: 'dev:spawnUnit', defId: 'dev.brawler', star: 1, cell: null },
-  'dev:giveItem': { type: 'dev:giveItem', itemId: 'dev.item.test' },
+  'dev:giveItem': { type: 'dev:giveItem', itemId: 'item.blade' },
 };
 
 function expectRejected(state: RunState, cmd: Command, reasonPattern?: RegExp): void {
@@ -206,14 +206,14 @@ describe('dev:addAugment / dev:giveItem', () => {
     expect(applyCommand(s, { type: 'dev:addAugment', augmentId: 'aug.iron_skin' }, content).ok).toBe(true);
     expect(applyCommand(s, { type: 'dev:addAugment', augmentId: 'aug.quickness' }, content).ok).toBe(true);
     expect(s.augments).toEqual(['aug.iron_skin', 'aug.quickness']);
-    expect(applyCommand(s, { type: 'dev:giveItem', itemId: 'dev.item.a' }, content).ok).toBe(true);
-    expect(s.itemBench).toEqual(['dev.item.a']);
+    expect(applyCommand(s, { type: 'dev:giveItem', itemId: 'item.blade' }, content).ok).toBe(true);
+    expect(s.itemBench).toEqual(['item.blade']);
   });
-  it('rejects an unknown augment id and an empty or oversized item id', () => {
+  it('rejects an unknown augment id and an unknown item id', () => {
     const s = devRun();
     expectRejected(s, { type: 'dev:addAugment', augmentId: '' }, /unknown augment id/);
     expectRejected(s, { type: 'dev:addAugment', augmentId: 'aug.does_not_exist' }, /unknown augment id/);
-    expectRejected(s, { type: 'dev:giveItem', itemId: 'x'.repeat(65) }, /invalid item id/);
+    expectRejected(s, { type: 'dev:giveItem', itemId: 'item.does_not_exist' }, /unknown item id/);
   });
 });
 
@@ -324,7 +324,7 @@ describe('replay with dev commands', () => {
       { type: 'dev:openShop', tier: 1 },
       { type: 'dev:spawnUnit', defId: 'dev.guardian', star: 2, cell: { col: 3, row: 7 } },
       { type: 'dev:addAugment', augmentId: 'aug.iron_skin' },
-      { type: 'dev:giveItem', itemId: 'dev.item.x' },
+      { type: 'dev:giveItem', itemId: 'item.blade' },
       { type: 'dev:invinciblePieces', on: true },
       { type: 'startCombat' },
       { type: 'nextRound' },

@@ -1,0 +1,32 @@
+{
+  "_provisional": "Engine sample content. Every value is a placeholder until SPEC.md defines it (see QUESTIONS.md).",
+  "items": [
+    { "id": "item.blade", "name": "Blade Fragment", "kind": "component", "effects": [{ "type": "statMod", "stat": "attack", "mode": "flat", "value": 10, "duration": null, "target": "self" }] },
+    { "id": "item.chain", "name": "Chain Fragment", "kind": "component", "effects": [{ "type": "statMod", "stat": "armor", "mode": "flat", "value": 10, "duration": null, "target": "self" }] },
+    { "id": "item.tome", "name": "Tome Fragment", "kind": "component", "effects": [{ "type": "statMod", "stat": "abilityPower", "mode": "flat", "value": 15, "duration": null, "target": "self" }] },
+    { "id": "item.twin_blade", "name": "Twin Blade", "kind": "completed", "effects": [{ "type": "statMod", "stat": "attack", "mode": "flat", "value": 25, "duration": null, "target": "self" }] },
+    {
+      "id": "item.guardians_edge",
+      "name": "Guardian's Edge",
+      "kind": "completed",
+      "effects": [
+        { "type": "statMod", "stat": "attack", "mode": "flat", "value": 15, "duration": null, "target": "self" },
+        { "type": "statMod", "stat": "armor", "mode": "flat", "value": 15, "duration": null, "target": "self" }
+      ]
+    },
+    {
+      "id": "item.arcane_ward",
+      "name": "Arcane Ward",
+      "kind": "completed",
+      "effects": [
+        { "type": "statMod", "stat": "armor", "mode": "flat", "value": 10, "duration": null, "target": "self" },
+        { "type": "statMod", "stat": "abilityPower", "mode": "flat", "value": 20, "duration": null, "target": "self" }
+      ]
+    }
+  ],
+  "recipes": [
+    { "components": ["item.blade", "item.blade"], "result": "item.twin_blade" },
+    { "components": ["item.blade", "item.chain"], "result": "item.guardians_edge" },
+    { "components": ["item.chain", "item.tome"], "result": "item.arcane_ward" }
+  ]
+}

@@ -5,6 +5,7 @@ import { DAMAGE_KINDS, HOOK_NAMES, TARGET_SELS } from '../sim/effects.ts';
 import type { AuraDef, AuraEffect, Effect, Hooks, ProjectileDef } from '../sim/effects.ts';
 import type { BoardConfig } from '../sim/hex.ts';
 import { ENCOUNTER_TYPES } from '../sim/rules.ts';
+import type { ItemDef, RecipeDef } from '../sim/items.ts';
 import type { AugmentDef, Encounter, Rules } from '../sim/rules.ts';
 import type { SandboxRuleOverrides, SandboxUnit } from '../sim/sandbox.ts';
 import { STAT_KIND, STAT_MAX, STAT_NAMES } from '../sim/stats.ts';
@@ -184,6 +185,26 @@ export const TraitsFileSchema = z.strictObject({
   traits: z.array(TraitDefSchema).min(1),
 });
 
+export const ItemDefSchema = z.strictObject({
+  id: z.string().regex(/^[a-z0-9_.-]+$/),
+  name: z.string().min(1),
+  kind: z.enum(['component', 'completed']),
+  effects: z.array(EffectSchema),
+}) satisfies z.ZodType<ItemDef>;
+
+const itemId = z.string().regex(/^[a-z0-9_.-]+$/);
+
+export const RecipeDefSchema = z.strictObject({
+  components: z.tuple([itemId, itemId]),
+  result: itemId,
+}) satisfies z.ZodType<RecipeDef>;
+
+export const ItemsFileSchema = z.strictObject({
+  _provisional: provisional,
+  items: z.array(ItemDefSchema).min(1),
+  recipes: z.array(RecipeDefSchema).default([]),
+});
+
 /** Direct per-stat overrides for a sandbox unit; each field keeps StatBlockSchema's own bound. */
 export const StatOverridesSchema = StatBlockSchema.partial() satisfies z.ZodType<Partial<StatBlock>>;
 
@@ -245,6 +266,7 @@ export const RulesSchema = z
       sellRefund: nonNeg,
       maxStar: posInt,
       mergeCopies: z.number().int().min(2),
+      itemSlots: posInt,
       poolSize: z.record(z.string().regex(/^[1-9][0-9]*$/), nonNegInt),
       shopOdds: z.record(z.string().regex(/^[1-9][0-9]*$/), oddsRow),
     }),
@@ -272,6 +294,7 @@ export type BoardFile = z.infer<typeof BoardFileSchema>;
 export type RulesFile = z.infer<typeof RulesSchema>;
 export type AugmentsFile = z.infer<typeof AugmentsFileSchema>;
 export type TraitsFile = z.infer<typeof TraitsFileSchema>;
+export type ItemsFile = z.infer<typeof ItemsFileSchema>;
 
 /** Logical data files and the schema that validates each. */
 export const FILE_SCHEMAS = {
@@ -281,6 +304,7 @@ export const FILE_SCHEMAS = {
   encounters: EncountersFileSchema,
   augments: AugmentsFileSchema,
   traits: TraitsFileSchema,
+  items: ItemsFileSchema,
   boardFile: BoardFileSchema,
   sandboxSetupFile: SandboxSetupFileSchema,
 } as const;
