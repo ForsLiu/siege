@@ -26,6 +26,9 @@ export interface DevPanelDeps {
   tiers: number;
   /** Player-half cells a unit may be spawned onto. */
   cells: readonly Cell[];
+  /** Combat FX toggle (P0-30): client-only, never a Command — toggling it cannot change a hash,
+   *  so it lives outside the dispatch path every other control in this panel goes through. */
+  fx: { get(): boolean; set(enabled: boolean): void };
 }
 
 export interface DevPanel {
@@ -116,6 +119,10 @@ export function createDevPanel(parent: HTMLElement, deps: DevPanelDeps): DevPane
   inpItem.addEventListener('input', () => {
     model.itemId = inpItem.value;
   });
+  const chkFx = el('input');
+  chkFx.type = 'checkbox';
+  chkFx.checked = deps.fx.get();
+  chkFx.addEventListener('change', () => deps.fx.set(chkFx.checked));
 
   // One row per group, each keeping a fixed number of leading nodes (its caption) across
   // rebuilds. Typed by group, so adding a group without a row fails the build.
@@ -150,8 +157,10 @@ export function createDevPanel(parent: HTMLElement, deps: DevPanelDeps): DevPane
   shopRow.append(el('span', 'dev-label', 'shop'), selTier);
   const idRow = el('div', 'dev-row');
   idRow.append(el('span', 'dev-label', 'ids'), inpAugment, inpItem);
+  const fxRow = el('div', 'dev-row');
+  fxRow.append(el('span', 'dev-label', 'fx'), chkFx);
 
-  root.append(title, info, rows.gold.el, rows.xp.el, rows.toggles.el, shopRow, rows.round.el, spawnRow, idRow, rows.content.el);
+  root.append(title, info, rows.gold.el, rows.xp.el, rows.toggles.el, shopRow, rows.round.el, spawnRow, idRow, fxRow, rows.content.el);
   parent.appendChild(root);
 
   let last = '';

@@ -1,18 +1,24 @@
 // Shared fight-playback state: turns a FightResult into a scrubbable timeline the renderer
 // draws frame by frame. Used by both the run screen (runController.ts) and the sandbox screen
 // (sandboxController.ts), which otherwise duplicate this exactly.
+import { buildFxCues, type FxCue } from '../render/fx.ts';
 import { buildTimeline, type Timeline } from '../render/timeline.ts';
 import type { FightResult } from '../sim/fight.ts';
+import type { UnitDef } from '../sim/units.ts';
 
 export interface PlaybackState {
   timeline: Timeline;
+  /** Combat FX cues for this fight (P0-30), computed once alongside the timeline. */
+  fx: FxCue[];
   /** Fractional sim tick the renderer is showing. */
   tick: number;
   onDone: (() => void) | null;
 }
 
-export function startPlayback(result: FightResult, moveTicks: number, onDone: (() => void) | null = null): PlaybackState {
-  return { timeline: buildTimeline(result, moveTicks), tick: 0, onDone };
+/** `unitsById` is the *fight's own* unit registry (`FightRules.units`) — for a sandbox fight
+ *  that includes its synthetic per-instance unit defs, not just `content.unitsById` (P0-30). */
+export function startPlayback(result: FightResult, moveTicks: number, unitsById: Record<string, UnitDef>, onDone: (() => void) | null = null): PlaybackState {
+  return { timeline: buildTimeline(result, moveTicks), fx: buildFxCues(result.events, unitsById), tick: 0, onDone };
 }
 
 /**

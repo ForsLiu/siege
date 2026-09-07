@@ -97,7 +97,7 @@ export class RunController {
     const pending = this.play;
     this.play = null;
     pending?.onDone?.();
-    this.play = startPlaybackState(result, this.moveTicks, onDone);
+    this.play = startPlaybackState(result, this.moveTicks, this.deps.content.unitsById, onDone);
   }
 
   /** Advances playback by `dt` seconds at `speed`; finishes it past the last tick. */

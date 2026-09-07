@@ -40,6 +40,9 @@ const devBoardNames = DEV_BOARD_NAMES;
 let screen: ScreenState = initialScreen();
 let hover: Cell | null = null;
 let speed = 1;
+/** Combat FX toggle (P0-30): client-only rendering setting, never a Command — see the F2 panel's
+ *  `fx` checkbox. Defaults on; disabling it only skips `BoardRenderer.drawFx` below. */
+let fxOn = true;
 /** Shop-card hover (P0-20): shop offers have no uid, so they preview on hover, not click (the
  *  card's click already buys). */
 let hoveredShopDefId: string | null = null;
@@ -626,7 +629,9 @@ function frame(ts: number): void {
 
 function drawPlayback(p: PlaybackState, displayContent: typeof content = content): void {
   const idx = Math.min(p.timeline.frames.length - 1, Math.max(0, Math.floor(p.tick)));
-  renderer.drawFight({ frame: p.timeline.frames[idx] ?? [], tick: p.tick, moveTicks, content: displayContent });
+  const frame = p.timeline.frames[idx] ?? [];
+  renderer.drawFight({ frame, tick: p.tick, moveTicks, content: displayContent });
+  if (fxOn) renderer.drawFx(p.fx, p.tick, frame, moveTicks);
 }
 
 /** `content` with the sandbox's synthetic per-instance unit defs merged in, so the renderer's
@@ -660,6 +665,7 @@ if (__SIEGE_DEV__) {
         maxStar: content.rules.economy.maxStar,
         tiers: shopTierCount(content),
         cells,
+        fx: { get: () => fxOn, set: (v) => (fxOn = v) },
       });
       const persistence: SandboxPersistence = {
         async save(name, setup) {

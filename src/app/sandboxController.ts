@@ -285,7 +285,10 @@ export class SandboxController {
     this.play = null;
     pending?.onDone?.();
     this.message = '';
-    this.play = startPlayback(result, this.moveTicks, () => {
+    // `lastUnits` (set by `runOnce` before this always runs, and preserved for `replay`) is the
+    // fight's own synthetic per-instance unit registry — `content.unitsById` alone doesn't have
+    // these ids, so FX cue building (P0-30) would silently miss every attackType-dependent cue.
+    this.play = startPlayback(result, this.moveTicks, { ...this.deps.content.unitsById, ...(this.lastUnits ?? {}) }, () => {
       this.message = summaryLine(result, this.tickRate);
       this.deps.onChange();
     });

@@ -1,0 +1,10 @@
+{
+  "_provisional": "P0-30 Combat FX fixture: dev.warden's onRoundStart hook grants itself a 150 shield at combat start (no mana/cast needed), reliably triggering the shield-gained shimmer (and the hp-bar shield segment).",
+  "left": [
+    { "defId": "dev.warden", "star": 1, "col": 3, "row": 5, "items": [], "statOverrides": {} }
+  ],
+  "right": [
+    { "defId": "dev.brawler", "star": 1, "col": 4, "row": 5, "items": [], "statOverrides": { "attack": 5 } }
+  ],
+  "rules": { "maxSeconds": 8, "overtime": false }
+}

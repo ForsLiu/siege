@@ -1,6 +1,7 @@
 // Canvas 2D renderer for the hex board. Reads sim state / timeline snapshots; never mutates them.
 import type { UnitSnapshot } from './timeline.ts';
 import { interpolatedCell } from './timeline.ts';
+import { drawFxCues, type FxCue } from './fx.ts';
 import type { BoardConfig, Cell } from '../sim/hex.ts';
 import { isPlayerCell, mirrorCell } from '../sim/hex.ts';
 import type { Content } from '../sim/rules.ts';
@@ -63,6 +64,7 @@ const COLORS = {
   stun: '#facc15',
   rangeAttack: '#c9a227',
   rangeAbility: '#38bdf8',
+  shield: '#7dd3fc',
 };
 
 export class BoardRenderer {
@@ -188,7 +190,7 @@ export class BoardRenderer {
     draw(ring.attack, COLORS.rangeAttack, false);
   }
 
-  private drawUnit(x: number, y: number, opts: { team: 0 | 1; label: string; star: number; hp: number; maxHp: number; mana: number; maxMana: number; selected: boolean; flash: boolean; stunned: boolean; alpha: number }): void {
+  private drawUnit(x: number, y: number, opts: { team: 0 | 1; label: string; star: number; hp: number; maxHp: number; mana: number; maxMana: number; shield: number; selected: boolean; flash: boolean; stunned: boolean; alpha: number }): void {
     const ctx = this.ctx;
     const r = this.size * 0.62;
     ctx.save();
@@ -229,7 +231,14 @@ export class BoardRenderer {
     ctx.fillStyle = COLORS.hpBg;
     ctx.fillRect(bx, hpY, bw, 4);
     ctx.fillStyle = COLORS.hp;
-    ctx.fillRect(bx, hpY, bw * Math.max(0, Math.min(1, opts.maxHp > 0 ? opts.hp / opts.maxHp : 0)), 4);
+    const hpFrac = Math.max(0, Math.min(1, opts.maxHp > 0 ? opts.hp / opts.maxHp : 0));
+    ctx.fillRect(bx, hpY, bw * hpFrac, 4);
+    // Shield segment (P0-30): extends past the hp fill, representing extra effective hp.
+    if (opts.shield > 0 && opts.maxHp > 0) {
+      const shieldFrac = Math.min(1 - hpFrac, opts.shield / opts.maxHp);
+      ctx.fillStyle = COLORS.shield;
+      ctx.fillRect(bx + bw * hpFrac, hpY, bw * shieldFrac, 4);
+    }
     if (opts.maxMana > 0) {
       ctx.fillStyle = COLORS.manaBg;
       ctx.fillRect(bx, hpY + 5, bw, 3);
@@ -261,6 +270,7 @@ export class BoardRenderer {
         maxHp: 1,
         mana: stats?.startMana ?? 0,
         maxMana: stats?.maxMana ?? 0,
+        shield: 0,
         selected: false,
         flash: false,
         stunned: false,
@@ -279,6 +289,7 @@ export class BoardRenderer {
         maxHp: 1,
         mana: stats?.startMana ?? 0,
         maxMana: stats?.maxMana ?? 0,
+        shield: 0,
         selected: view.selectedUid === u.uid,
         flash: false,
         stunned: false,
@@ -303,11 +314,18 @@ export class BoardRenderer {
         maxHp: u.maxHp,
         mana: u.mana,
         maxMana: u.maxMana,
+        shield: u.shield,
         selected: false,
         flash: u.lastHitTick >= 0 && view.tick - u.lastHitTick < 3,
         stunned: view.tick < u.stunnedUntil,
         alpha: 1,
       });
     }
+  }
+
+  /** Draws every FX cue active at `tick` (P0-30) — a fully separate call so the app layer's dev
+   *  toggle can skip it entirely without touching `drawFight`'s own unit/bar rendering. */
+  drawFx(cues: readonly FxCue[], tick: number, frame: readonly UnitSnapshot[], moveTicks: number): void {
+    drawFxCues(this.ctx, (col, row) => this.cellCenter(col, row), cues, tick, frame, moveTicks);
   }
 }

@@ -1,0 +1,10 @@
+{
+  "_provisional": "P0-30 Combat FX fixture: two adjacent melee brawlers trade basic attacks immediately (no travel time needed), reliably triggering the meleeSwing + impactFlash cues.",
+  "left": [
+    { "defId": "dev.brawler", "star": 1, "col": 3, "row": 5, "items": [], "statOverrides": { "attack": 300, "attackSpeed": 3 } }
+  ],
+  "right": [
+    { "defId": "dev.brawler", "star": 1, "col": 4, "row": 5, "items": [], "statOverrides": { "hp": 3000, "armor": 0 } }
+  ],
+  "rules": { "maxSeconds": 8, "overtime": false }
+}

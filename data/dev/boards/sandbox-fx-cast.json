@@ -1,0 +1,10 @@
+{
+  "_provisional": "P0-30 Combat FX fixture: dev.mage starts almost at max mana (70) so Dev Blast casts within the first few ticks, reliably triggering the castFlash + castToast cues.",
+  "left": [
+    { "defId": "dev.mage", "star": 1, "col": 3, "row": 5, "items": [], "statOverrides": { "startMana": 65 } }
+  ],
+  "right": [
+    { "defId": "dev.brawler", "star": 1, "col": 4, "row": 5, "items": [], "statOverrides": { "hp": 3000, "armor": 0 } }
+  ],
+  "rules": { "maxSeconds": 8, "overtime": false }
+}
