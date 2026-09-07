@@ -2,10 +2,12 @@
 // Selection lives in the app layer (e.g. RunController.selectedUid), never in sim state, and
 // this function never mutates its `state` argument — it only reads RunState and content.
 import type { Effect, Scaling, TargetSel } from '../sim/effects.ts';
+import type { Cell } from '../sim/hex.ts';
+import { hexesWithin } from '../sim/hex.ts';
 import { findUnit, type RunState } from '../sim/run.ts';
 import type { Content } from '../sim/rules.ts';
-import { computeStat, STAT_NAMES, type Modifier, type StatName } from '../sim/stats.ts';
-import { baseStats } from '../sim/units.ts';
+import { computeStat, STAT_NAMES, type Modifier, type StatBlock, type StatName } from '../sim/stats.ts';
+import { baseStats, type UnitDef } from '../sim/units.ts';
 
 export interface InspectorStat {
   stat: StatName;
@@ -33,7 +35,8 @@ export interface InspectorCombat {
 }
 
 export interface InspectorModel {
-  uid: number;
+  /** Null for a preview of a unit that is not (yet) an owned unit: a shop offer or a sandbox row. */
+  uid: number | null;
   defId: string;
   name: string;
   /** Shop cost; also the pool tier (units.ts: `UnitDef.cost`). */
@@ -59,14 +62,8 @@ export interface CombatOverlay {
   modifiers: readonly Modifier[];
 }
 
-export function inspectorModel(state: RunState, uid: number, content: Content, combat: CombatOverlay | null = null): InspectorModel | null {
-  const found = findUnit(state, uid);
-  if (!found) return null;
-  const unit = found.unit;
-  const def = content.unitsById[unit.defId];
-  if (!def) return null;
-
-  const base = baseStats(def, unit.star);
+function buildModel(uid: number | null, def: UnitDef, star: number, items: readonly string[], combat: CombatOverlay | null): InspectorModel {
+  const base = baseStats(def, star);
   const modifiers = combat?.modifiers ?? [];
   const statOf = (stat: StatName): number => computeStat(base[stat], stat, modifiers);
   const stats: InspectorStat[] = STAT_NAMES.map((stat) => ({
@@ -80,20 +77,67 @@ export function inspectorModel(state: RunState, uid: number, content: Content, c
   const startMana = statOf('startMana');
 
   return {
-    uid: unit.uid,
+    uid,
     defId: def.id,
     name: def.name,
     cost: def.cost,
-    star: unit.star,
+    star,
     traits: [],
     ability: def.ability ? { name: def.ability.name, text: def.ability.effects.map((e) => describeEffect(e, statOf)).join('; ') } : null,
     stats,
     // Copied, not aliased: RunState.items is a live mutable array, and this model is a read-only
     // view (code review on P0-19: a naive `.push`/`.sort` by a future consumer would otherwise
     // corrupt sim state outside the Command path with no test able to catch it).
-    items: [...unit.items],
+    items: [...items],
     mana: combat ? { current: combat.mana, max: combat.maxMana } : { current: Math.min(maxMana, startMana), max: maxMana },
     combat: combat ? { hp: combat.hp, maxHp: combat.maxHp, shields: combat.shields } : null,
+  };
+}
+
+export function inspectorModel(state: RunState, uid: number, content: Content, combat: CombatOverlay | null = null): InspectorModel | null {
+  const found = findUnit(state, uid);
+  if (!found) return null;
+  const unit = found.unit;
+  const def = content.unitsById[unit.defId];
+  if (!def) return null;
+  return buildModel(unit.uid, def, unit.star, unit.items, combat);
+}
+
+/** A tier-1, no-items, planning-phase preview of a shop offer (P0-20): the offer has no `uid`. */
+export function shopPreviewModel(defId: string, content: Content): InspectorModel | null {
+  const def = content.unitsById[defId];
+  if (!def) return null;
+  return buildModel(null, def, 1, [], null);
+}
+
+/** A preview of a sandbox row (P0-20): stat overrides are baked into the star's block, the same
+ *  way `src/sim/sandbox.ts` builds its synthetic per-instance `UnitDef` for `fight()`. */
+export function sandboxPreviewModel(unit: { defId: string; star: number; items: readonly string[]; statOverrides: Partial<StatBlock> }, content: Content): InspectorModel | null {
+  const def = content.unitsById[unit.defId];
+  if (!def) return null;
+  const starIdx = unit.star - 1;
+  const block = def.stats[starIdx];
+  if (!block) return null;
+  const overridden: UnitDef = { ...def, stats: def.stats.map((b, i) => (i === starIdx ? { ...b, ...unit.statOverrides } : b)) };
+  return buildModel(null, overridden, unit.star, unit.items, null);
+}
+
+export interface RangeRings {
+  /** Attack-range hexes (`hexesWithin(origin, range)`, the unit's current `range` stat). */
+  attack: Cell[];
+  /** The aura's range, when the unit's def has one; the effect vocabulary has no other
+   *  range-bearing ability shape yet (QUESTIONS.md P0-20). */
+  ability: Cell[] | null;
+}
+
+/** Board highlight for a selected unit at `origin`, from its current stats and def — a pure
+ *  function of content and the model, read by the renderer only (never sim state). */
+export function rangeRings(model: InspectorModel, content: Content, origin: Cell): RangeRings {
+  const def = content.unitsById[model.defId];
+  const attackRange = model.stats.find((s) => s.stat === 'range')?.current ?? 0;
+  return {
+    attack: hexesWithin(origin, attackRange, content.board),
+    ability: def?.aura ? hexesWithin(origin, def.aura.range, content.board) : null,
   };
 }
 

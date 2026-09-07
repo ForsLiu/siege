@@ -2,12 +2,25 @@
 import type { UnitSnapshot } from './timeline.ts';
 import { interpolatedCell } from './timeline.ts';
 import type { BoardConfig, Cell } from '../sim/hex.ts';
-import { mirrorCell } from '../sim/hex.ts';
+import { isPlayerCell, mirrorCell } from '../sim/hex.ts';
 import type { Content } from '../sim/rules.ts';
 import type { BoardUnit, PlacedUnit } from '../sim/units.ts';
 import { letterbox, type Box } from './layout.ts';
 
+/** Which half of the board a cell is shaded as; the single source of truth is `isPlayerCell`. */
+export function cellHalf(c: Cell, board: BoardConfig): 'player' | 'enemy' {
+  return isPlayerCell(c, board) ? 'player' : 'enemy';
+}
+
 const SQRT3 = Math.sqrt(3);
+
+/** Attack-range (and ability/aura-range, when it has one) highlight for the selected unit (P0-20).
+ *  Plain cell lists computed by the app layer (`inspectorModel.ts`'s `rangeRings`); the renderer
+ *  only draws them. */
+export interface RangeRingView {
+  attack: Cell[];
+  ability: Cell[] | null;
+}
 
 export interface PlanningView {
   units: PlacedUnit[];
@@ -18,6 +31,7 @@ export interface PlanningView {
   content: Content;
   /** Cell under a dragged unit, highlighted green when the drop is legal and red when not. */
   drop?: { cell: Cell | null; valid: boolean } | null;
+  rangeRing?: RangeRingView | null;
 }
 
 export interface FightView {
@@ -26,6 +40,7 @@ export interface FightView {
   tick: number;
   moveTicks: number;
   content: Content;
+  rangeRing?: RangeRingView | null;
 }
 
 const COLORS = {
@@ -46,6 +61,8 @@ const COLORS = {
   manaBg: '#1e2a3a',
   text: '#e5e7eb',
   stun: '#facc15',
+  rangeAttack: '#c9a227',
+  rangeAbility: '#38bdf8',
 };
 
 export class BoardRenderer {
@@ -136,13 +153,12 @@ export class BoardRenderer {
     ctx.fillRect(0, 0, this.width, this.height);
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(this.play.x, this.play.y, this.play.width, this.play.height);
-    const playerStart = this.board.rows - this.board.playerRows;
     for (let row = 0; row < this.board.rows; row++) {
       for (let col = 0; col < this.board.cols; col++) {
         const c = this.cellCenter(col, row);
         this.hexPath(c.x, c.y, this.size - 1);
         const isHover = hover !== null && hover.col === col && hover.row === row;
-        ctx.fillStyle = isHover ? COLORS.hover : row >= playerStart ? COLORS.cellPlayer : COLORS.cellEnemy;
+        ctx.fillStyle = isHover ? COLORS.hover : cellHalf({ col, row }, this.board) === 'player' ? COLORS.cellPlayer : COLORS.cellEnemy;
         ctx.fill();
         const isDrop = drop?.cell != null && drop.cell.col === col && drop.cell.row === row;
         ctx.strokeStyle = isDrop ? (drop.valid ? COLORS.dropOk : COLORS.dropBad) : COLORS.cellLine;
@@ -150,6 +166,26 @@ export class BoardRenderer {
         ctx.stroke();
       }
     }
+  }
+
+  /** Outline-only ring for a selected unit's attack range, and its ability/aura range if any
+   *  (P0-20). Drawn after the grid and before units, so unit sprites stay on top. */
+  private drawRangeRing(ring: RangeRingView | null | undefined): void {
+    if (!ring) return;
+    const ctx = this.ctx;
+    const draw = (cells: Cell[], color: string, dashed: boolean): void => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash(dashed ? [4, 3] : []);
+      for (const cell of cells) {
+        const c = this.cellCenter(cell.col, cell.row);
+        this.hexPath(c.x, c.y, this.size - 3);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    };
+    if (ring.ability) draw(ring.ability, COLORS.rangeAbility, true);
+    draw(ring.attack, COLORS.rangeAttack, false);
   }
 
   private drawUnit(x: number, y: number, opts: { team: 0 | 1; label: string; star: number; hp: number; maxHp: number; mana: number; maxMana: number; selected: boolean; flash: boolean; stunned: boolean; alpha: number }): void {
@@ -211,6 +247,7 @@ export class BoardRenderer {
 
   drawPlanning(view: PlanningView): void {
     this.drawGrid(view.hover, view.drop ?? null);
+    this.drawRangeRing(view.rangeRing);
     for (const e of view.enemy) {
       const m = mirrorCell(e, this.board);
       const c = this.cellCenter(m.col, m.row);
@@ -252,6 +289,7 @@ export class BoardRenderer {
 
   drawFight(view: FightView): void {
     this.drawGrid(null);
+    this.drawRangeRing(view.rangeRing);
     const sorted = [...view.frame].sort((a, b) => a.row - b.row || a.uid - b.uid);
     for (const u of sorted) {
       if (!u.alive) continue;

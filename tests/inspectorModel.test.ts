@@ -2,8 +2,9 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand } from '../src/sim/commands.ts';
 import { computeStat } from '../src/sim/stats.ts';
+import { hexesWithin } from '../src/sim/hex.ts';
 import { createRun, stateHash, type RunState } from '../src/sim/run.ts';
-import { inspectorModel, type CombatOverlay } from '../src/app/inspectorModel.ts';
+import { inspectorModel, rangeRings, sandboxPreviewModel, shopPreviewModel, type CombatOverlay } from '../src/app/inspectorModel.ts';
 import { contentWith, devContent } from './helpers.ts';
 import type { Content } from '../src/sim/rules.ts';
 
@@ -210,5 +211,73 @@ describe('inspectorModel (P0-19)', () => {
 
     expect(stateHash(state)).toBe(before);
     expect(JSON.stringify(state)).toBe(beforeJson);
+  });
+});
+
+describe('shopPreviewModel and sandboxPreviewModel (P0-20)', () => {
+  it('returns null for an unknown defId', () => {
+    expect(shopPreviewModel('nope', content)).toBeNull();
+    expect(sandboxPreviewModel({ defId: 'nope', star: 1, items: [], statOverrides: {} }, content)).toBeNull();
+  });
+
+  it('shopPreviewModel previews a tier-1, item-less, planning-phase unit with no uid', () => {
+    const def = content.unitsById['dev.archer']!;
+    const model = shopPreviewModel('dev.archer', content)!;
+    expect(model.uid).toBeNull();
+    expect(model.defId).toBe('dev.archer');
+    expect(model.star).toBe(1);
+    expect(model.items).toEqual([]);
+    expect(model.combat).toBeNull();
+    for (const s of model.stats) {
+      expect(s.sources).toEqual([]);
+      expect(s.current).toBe(def.stats[0]![s.stat]);
+    }
+  });
+
+  it('sandboxPreviewModel bakes stat overrides into the previewed star block, like sandbox.ts does for fight()', () => {
+    const def = content.unitsById['dev.brawler']!;
+    const model = sandboxPreviewModel({ defId: 'dev.brawler', star: 2, items: ['dev.item'], statOverrides: { attack: 999 } }, content)!;
+    expect(model.star).toBe(2);
+    expect(model.items).toEqual(['dev.item']);
+    const attack = model.stats.find((s) => s.stat === 'attack')!;
+    expect(attack.base).toBe(999);
+    expect(attack.current).toBe(999);
+    expect(attack.sources).toEqual([]);
+    const hp = model.stats.find((s) => s.stat === 'hp')!;
+    expect(hp.base).toBe(def.stats[1]!.hp);
+  });
+});
+
+describe('rangeRings (P0-20)', () => {
+  const origin = { col: 3, row: 5 };
+
+  it('the attack ring equals hexesWithin(origin, range) on three sample units, with and without an aura', () => {
+    const cases: { defId: string; expectRange: number; expectAbility: number | null }[] = [
+      { defId: 'dev.brawler', expectRange: 1, expectAbility: null },
+      { defId: 'dev.archer', expectRange: 4, expectAbility: null },
+      { defId: 'dev.warden', expectRange: 1, expectAbility: 2 },
+    ];
+    for (const c of cases) {
+      const model = shopPreviewModel(c.defId, content)!;
+      const rings = rangeRings(model, content, origin);
+      expect(rings.attack).toEqual(hexesWithin(origin, c.expectRange, content.board));
+      if (c.expectAbility === null) expect(rings.ability).toBeNull();
+      else expect(rings.ability).toEqual(hexesWithin(origin, c.expectAbility, content.board));
+    }
+  });
+
+  it('a stat-mod modifier on range moves the attack ring, since it is resolved against the model, not raw data', () => {
+    const state = devRun();
+    const uid = spawn(state, 'dev.brawler', 1);
+    const base = content.unitsById['dev.brawler']!.stats[0]!;
+    const model = inspectorModel(state, uid, content, {
+      hp: base.hp,
+      maxHp: base.hp,
+      mana: 0,
+      maxMana: base.maxMana,
+      shields: 0,
+      modifiers: [{ source: 'test', stat: 'range', mode: 'flat', value: 3, expiresTick: null }],
+    })!;
+    expect(rangeRings(model, content, origin).attack).toEqual(hexesWithin(origin, base.range + 3, content.board));
   });
 });

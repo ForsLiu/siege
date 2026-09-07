@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { axialToOffset, bfsPath, cellIndex, cellsWithin, floodDistances, hexDistance, indexToCell, MIRROR_DIR_OFFSET, mirrorCell, neighbors, offsetToAxial, ring, type BoardConfig, type Cell } from '../src/sim/hex.ts';
+import { axialToOffset, bfsPath, cellIndex, floodDistances, hexDistance, hexesWithin, indexToCell, MIRROR_DIR_OFFSET, mirrorCell, neighbors, offsetToAxial, ring, type BoardConfig, type Cell } from '../src/sim/hex.ts';
 
 const board: BoardConfig = { cols: 7, rows: 8, playerRows: 4, layout: 'odd-r' };
 
@@ -34,11 +34,11 @@ describe('hex math', () => {
     expect(neighbors({ col: 0, row: 3 }, board)).toHaveLength(5);
     for (const c of allCells(board)) for (const n of neighbors(c, board)) expect(hexDistance(c, n)).toBe(1);
   });
-  it('ring and cellsWithin agree with hexDistance', () => {
+  it('ring and hexesWithin agree with hexDistance', () => {
     const center = { col: 3, row: 4 };
     expect(ring(center, 1, board)).toHaveLength(6);
     expect(ring(center, 2, board)).toHaveLength(12);
-    expect(cellsWithin(center, 2, board)).toHaveLength(19);
+    expect(hexesWithin(center, 2, board)).toHaveLength(19);
     for (const c of ring(center, 3, board)) expect(hexDistance(center, c)).toBe(3);
   });
   it('mirrorCell is an involution that preserves distances', () => {

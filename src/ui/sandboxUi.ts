@@ -15,11 +15,14 @@ export interface SandboxUiView {
   lastAggregate: SandboxResult | null;
   canReplay: boolean;
   isPlaying: boolean;
+  selected: { side: SandboxSide; index: number } | null;
 }
 
 export interface SandboxUiCallbacks {
   onAddUnit(side: SandboxSide, defId: string): void;
   onRemoveUnit(side: SandboxSide, index: number): void;
+  /** Click on a row's name (P0-20 inspector); toggles off when the same row is clicked again. */
+  onSelectUnit(side: SandboxSide, index: number): void;
   onSetStar(side: SandboxSide, index: number, star: number): void;
   onSetItems(side: SandboxSide, index: number, items: string[]): void;
   onSetStatOverride(side: SandboxSide, index: number, stat: StatName, value: number | null): void;
@@ -141,14 +144,17 @@ export function createSandboxUi(parent: HTMLElement, cb: SandboxUiCallbacks): Sa
     }
   }
 
-  function renderSide(side: SandboxSide, content: Content, units: readonly SandboxUnit[], playing: boolean): void {
+  function renderSide(side: SandboxSide, content: Content, units: readonly SandboxUnit[], playing: boolean, selected: { side: SandboxSide; index: number } | null): void {
     const container = sides[side];
     container.replaceChildren(el('span', 'label', side === 'left' ? 'Left:' : 'Right:'));
     const maxStar = content.rules.economy.maxStar;
     units.forEach((u, index) => {
       const def = content.unitsById[u.defId];
       const row = el('div', 'row sandbox-unit');
-      row.append(el('span', 'card-name', def?.name ?? u.defId));
+      row.classList.toggle('selected', selected !== null && selected.side === side && selected.index === index);
+      const name = el('span', 'card-name', def?.name ?? u.defId);
+      name.addEventListener('click', () => cb.onSelectUnit(side, index));
+      row.append(name);
 
       const starInput = el('input', 'input');
       starInput.type = 'number';
@@ -232,8 +238,8 @@ export function createSandboxUi(parent: HTMLElement, cb: SandboxUiCallbacks): Sa
       renderRoster(view.content);
     }
     hudMsg.textContent = view.message;
-    renderSide('left', view.content, sideList(view.setup, 'left'), view.isPlaying);
-    renderSide('right', view.content, sideList(view.setup, 'right'), view.isPlaying);
+    renderSide('left', view.content, sideList(view.setup, 'left'), view.isPlaying, view.selected);
+    renderSide('right', view.content, sideList(view.setup, 'right'), view.isPlaying, view.selected);
 
     if (document.activeElement !== maxSecondsInput) maxSecondsInput.value = view.setup.rules.maxSeconds === undefined ? '' : String(view.setup.rules.maxSeconds);
     overtimeCheckbox.checked = view.setup.rules.overtime === true;

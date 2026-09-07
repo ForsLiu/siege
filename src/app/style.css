@@ -237,3 +237,65 @@ body {
 .sandbox-results {
   font-size: 12px;
 }
+
+.sandbox-unit.selected {
+  outline: 2px solid var(--accent);
+  border-radius: 4px;
+}
+
+.sandbox-unit .card-name {
+  cursor: pointer;
+}
+
+.inspector-panel {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 260px;
+  max-height: 70vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 10px;
+  z-index: 5;
+  font-size: 12px;
+}
+
+.inspector-panel[hidden] {
+  display: none;
+}
+
+.inspector-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.inspector-title {
+  font-weight: 600;
+  font-size: 14px;
+  flex: 1;
+}
+
+.inspector-close {
+  padding: 0 8px;
+  line-height: 1.4;
+}
+
+.inspector-meta,
+.inspector-mana,
+.inspector-combat,
+.inspector-items {
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.inspector-ability {
+  margin-bottom: 6px;
+}
+
+.inspector-stat {
+  padding: 1px 0;
+}

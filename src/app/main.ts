@@ -4,19 +4,21 @@
 // drag.ts (drop rules), hotkeys.ts (key mapping), screens.ts (screen machine).
 import './style.css';
 import { DEV_BOARD_NAMES, devBoardUnits, loadBrowserContent } from '../data/browser.ts';
-import { BoardRenderer } from '../render/board.ts';
+import { BoardRenderer, type RangeRingView } from '../render/board.ts';
 import type { UnitSnapshot } from '../render/timeline.ts';
 import type { Command } from '../sim/commands.ts';
 import { fight, type FightResult } from '../sim/fight.ts';
 import type { Cell } from '../sim/hex.ts';
-import { isPlayerCell } from '../sim/hex.ts';
+import { isPlayerCell, mirrorCell } from '../sim/hex.ts';
 import { fightRulesFrom } from '../sim/rules.ts';
 import { boardUnitAt, currentEncounter, shopTierCount } from '../sim/run.ts';
 import { createPauseScreen, createResultsScreen, createTitleScreen } from '../ui/screens.ts';
 import { createRunUi } from '../ui/runUi.ts';
 import { createSandboxUi } from '../ui/sandboxUi.ts';
+import { createInspectorUi } from '../ui/inspectorUi.ts';
 import { canDrag, dropOutcome, type DropOutcome } from './drag.ts';
 import { hotkeyAction, isViewAction } from './hotkeys.ts';
+import { inspectorModel, rangeRings, sandboxPreviewModel, shopPreviewModel, type InspectorModel } from './inspectorModel.ts';
 import type { PlaybackState } from './playback.ts';
 import { boardClick, boardDrop, type PointerOutcome } from './pointer.ts';
 import { RunController } from './runController.ts';
@@ -37,6 +39,12 @@ const devBoardNames = DEV_BOARD_NAMES;
 let screen: ScreenState = initialScreen();
 let hover: Cell | null = null;
 let speed = 1;
+/** Shop-card hover (P0-20): shop offers have no uid, so they preview on hover, not click (the
+ *  card's click already buys). */
+let hoveredShopDefId: string | null = null;
+/** The unit inspector's current subject and board origin (for the range ring), or null when
+ *  nothing is selected/hovered. Recomputed by `updateInspection` on every relevant change. */
+let inspection: { model: InspectorModel; origin: Cell | null } | null = null;
 let overlay: DevOverlay | null = null;
 let devPanel: DevPanel | null = null;
 let fps = 0;
@@ -132,6 +140,17 @@ const runUi = createRunUi(app, {
   onPause() {
     emit({ type: 'togglePause' });
   },
+  onHoverShop(defId) {
+    if (hoveredShopDefId === defId) return;
+    hoveredShopDefId = defId;
+    updateInspection();
+  },
+});
+
+const inspectorUi = createInspectorUi(app, {
+  onClose() {
+    closeInspection();
+  },
 });
 
 const sandboxUi = createSandboxUi(app, {
@@ -140,6 +159,9 @@ const sandboxUi = createSandboxUi(app, {
   },
   onRemoveUnit(side, index) {
     sandboxController.removeUnit(side, index);
+  },
+  onSelectUnit(side, index) {
+    sandboxController.selectUnit(side, index);
   },
   onSetStar(side, index, star) {
     sandboxController.setStar(side, index, star);
@@ -186,6 +208,9 @@ const sandboxUi = createSandboxUi(app, {
 function syncScreens(): void {
   const run = controller.run;
   drag = null;
+  // A screen change leaves no shop card under the pointer (or none of this shape), so a stale
+  // hover preview must not survive into whatever screen comes next (code review on P0-20).
+  hoveredShopDefId = null;
   if (screen.screen === 'title') {
     controller.clear();
     sandboxController.clear();
@@ -245,8 +270,10 @@ function refreshUi(): void {
       lastAggregate: sandboxController.lastAggregate,
       canReplay: sandboxController.lastResult !== null,
       isPlaying: sandboxController.playback !== null,
+      selected: sandboxController.selected,
     });
   }
+  updateInspection();
   devPanel?.update({
     seed: screen.screen === 'title' ? null : controller.seed,
     contentHash: content.contentHash,
@@ -257,6 +284,61 @@ function refreshUi(): void {
     invinciblePlayer: run?.dev.invinciblePlayer ?? false,
     message: controller.message,
   });
+}
+
+// ---- inspector (P0-20) ----
+
+/**
+ * The inspector's current subject: a hovered shop card, a selected board/bench unit, or a
+ * selected sandbox row (verdict order — a hovered shop card wins so it previews even while a
+ * unit stays selected underneath). `origin` is the board cell to draw the range ring around, or
+ * null for a bench/shop preview that is not placed anywhere.
+ */
+function currentInspection(): { model: InspectorModel; origin: Cell | null } | null {
+  if (screen.screen === 'run') {
+    if (hoveredShopDefId !== null) {
+      const model = shopPreviewModel(hoveredShopDefId, content);
+      return model ? { model, origin: null } : null;
+    }
+    const run = controller.run;
+    const uid = controller.selectedUid;
+    if (!run || uid === null) return null;
+    const model = inspectorModel(run, uid, content);
+    if (!model) return null;
+    const placed = run.board.find((u) => u.uid === uid) ?? null;
+    return { model, origin: placed ? { col: placed.col, row: placed.row } : null };
+  }
+  if (screen.screen === 'sandbox') {
+    const sel = sandboxController.selected;
+    if (!sel) return null;
+    const unit = sandboxController.setup[sel.side][sel.index];
+    if (!unit) return null;
+    const model = sandboxPreviewModel(unit, content);
+    if (!model) return null;
+    // The right side is drawn mirrored (drawPlanning mirrors `enemy`), so the ring must be too.
+    const origin = sel.side === 'left' ? { col: unit.col, row: unit.row } : mirrorCell({ col: unit.col, row: unit.row }, content.board);
+    return { model, origin };
+  }
+  return null;
+}
+
+function updateInspection(): void {
+  inspection = currentInspection();
+  inspectorUi.update(inspection?.model ?? null);
+}
+
+function closeInspection(): boolean {
+  if (hoveredShopDefId !== null) hoveredShopDefId = null;
+  else if (screen.screen === 'run' && controller.selectedUid !== null) controller.selectedUid = null;
+  else if (screen.screen === 'sandbox' && sandboxController.selected !== null) sandboxController.clearSelection();
+  else return false;
+  refreshUi();
+  return true;
+}
+
+function currentRangeRing(): RangeRingView | null {
+  if (!inspection || !inspection.origin) return null;
+  return rangeRings(inspection.model, content, inspection.origin);
 }
 
 // ---- input ----
@@ -351,9 +433,17 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   // Text inputs and the dev panel's own controls keep their keys (a focused panel button would
-  // otherwise re-fire on Space while Space also starts combat).
+  // otherwise re-fire on Space while Space also starts combat); a focused input also keeps its
+  // own Escape (e.g. reverting an edit), ahead of the inspector-close carve-out below.
   if (e.target instanceof HTMLInputElement) return;
   if (devPanel && e.target instanceof Node && devPanel.root.contains(e.target)) return;
+  // Esc closes the inspector first (P0-20); only once nothing is inspected does it fall through
+  // to the pause hotkey below (hotkeyAction's Escape -> pause mapping itself is unchanged: a
+  // second Escape press, with nothing left to inspect, still pauses).
+  if (e.key === 'Escape' && closeInspection()) {
+    e.preventDefault();
+    return;
+  }
   const action = hotkeyAction(e.key);
   if (!action) return;
   // Speed and pause are view-only: they work while paused and during combat playback.
@@ -418,6 +508,7 @@ function frame(ts: number): void {
         hover,
         content,
         drop: drag?.drop ? { cell: drag.cell, valid: drag.drop.valid } : null,
+        rangeRing: currentRangeRing(),
       });
     }
   } else if (screen.screen === 'devFight') {
@@ -430,12 +521,14 @@ function frame(ts: number): void {
       drawPlayback(sandboxPlay, sandboxDisplayContent());
     } else {
       const setup = sandboxController.setup;
+      const sel = sandboxController.selected;
       renderer.drawPlanning({
         units: setup.left.map((u, i) => ({ uid: i + 1, defId: u.defId, star: u.star, items: u.items, col: u.col, row: u.row })),
         enemy: setup.right,
-        selectedUid: null,
-        hover: null,
+        selectedUid: sel && sel.side === 'left' ? sel.index + 1 : null,
+        hover,
         content,
+        rangeRing: currentRangeRing(),
       });
     }
   } else {

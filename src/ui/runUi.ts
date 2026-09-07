@@ -22,6 +22,9 @@ export interface RunUiCallbacks {
   onDragStart(uid: number): void;
   onSpeed(speed: number): void;
   onPause(): void;
+  /** A shop card is hovered (defId) or un-hovered (null): shop offers have no uid to select, so
+   *  the inspector (P0-20) previews them on hover instead of stealing the card's click (buy). */
+  onHoverShop(defId: string | null): void;
 }
 
 export interface RunUi {
@@ -69,6 +72,16 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
   const bench = el('div', 'bench');
   root.append(hud, shop, bench, controls);
 
+  // Hover is delegated to the stable `shop` container, not the per-card buttons: those are
+  // rebuilt by `replaceChildren()` on every buy/reroll, and a card removed out from under the
+  // pointer never fires its own `mouseleave`, which would otherwise leave the inspector's shop
+  // preview stuck open (found live-testing this screen).
+  shop.addEventListener('mousemove', (e) => {
+    const card = (e.target as HTMLElement).closest('.shop-card') as HTMLElement | null;
+    cb.onHoverShop(card && !card.classList.contains('empty') ? (card.dataset['defid'] ?? null) : null);
+  });
+  shop.addEventListener('mouseleave', () => cb.onHoverShop(null));
+
   let current: RunUiView | null = null;
   btnReroll.addEventListener('click', () => cb.onCommand({ type: 'reroll' }));
   btnXp.addEventListener('click', () => cb.onCommand({ type: 'levelUp' }));
@@ -112,6 +125,7 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
       const card = el('button', 'card shop-card');
       if (defId) {
         const def = content.unitsById[defId];
+        card.dataset['defid'] = defId;
         card.append(el('div', 'card-name', def?.name ?? defId), el('div', 'card-cost', `${def?.cost ?? '?'}g`));
         card.disabled = !planning || validateCommand(state, { type: 'buy', slot }, content) !== null;
         card.addEventListener('click', () => cb.onCommand({ type: 'buy', slot }));

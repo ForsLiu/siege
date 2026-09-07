@@ -49,6 +49,8 @@ export class SandboxController {
   lastResult: FightResult | null = null;
   lastAggregate: SandboxResult | null = null;
   message = '';
+  /** Row selected for the P0-20 inspector; outside sim state, like RunController.selectedUid. */
+  selected: { side: SandboxSide; index: number } | null = null;
   /** The synthetic per-instance unit defs behind `lastResult`, for the renderer's labels. */
   lastUnits: Record<string, UnitDef> | null = null;
   private play: PlaybackState | null = null;
@@ -80,6 +82,7 @@ export class SandboxController {
     this.lastAggregate = null;
     this.message = '';
     this.play = null;
+    this.selected = null;
     this.deps.onScreenEvent({ type: 'enterSandbox' });
     this.deps.onChange();
   }
@@ -87,6 +90,19 @@ export class SandboxController {
   /** Drops any playback and forgets the setup (leaving the sandbox screen). */
   clear(): void {
     this.play = null;
+  }
+
+  /** Toggles the P0-20 inspector selection off when the same row is clicked again. */
+  selectUnit(side: SandboxSide, index: number): void {
+    const sel = this.selected;
+    this.selected = sel !== null && sel.side === side && sel.index === index ? null : { side, index };
+    this.deps.onChange();
+  }
+
+  clearSelection(): void {
+    if (this.selected === null) return;
+    this.selected = null;
+    this.deps.onChange();
   }
 
   addUnit(side: SandboxSide, defId: string): void {
@@ -104,6 +120,11 @@ export class SandboxController {
 
   removeUnit(side: SandboxSide, index: number): void {
     this.setup = { ...this.setup, [side]: this.setup[side].filter((_, i) => i !== index) };
+    const sel = this.selected;
+    if (sel !== null && sel.side === side) {
+      if (sel.index === index) this.selected = null;
+      else if (sel.index > index) this.selected = { side, index: sel.index - 1 };
+    }
     this.deps.onChange();
   }
 

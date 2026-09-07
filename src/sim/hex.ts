@@ -113,7 +113,7 @@ export function ring(center: Cell, radius: number, board: BoardConfig): Cell[] {
 }
 
 /** Cells within `radius` (inclusive) of center, ordered by (row, col). */
-export function cellsWithin(center: Cell, radius: number, board: BoardConfig): Cell[] {
+export function hexesWithin(center: Cell, radius: number, board: BoardConfig): Cell[] {
   const out: Cell[] = [];
   for (let row = Math.max(0, center.row - radius); row <= Math.min(board.rows - 1, center.row + radius); row++) {
     for (let col = Math.max(0, center.col - radius - 1); col <= Math.min(board.cols - 1, center.col + radius + 1); col++) {
