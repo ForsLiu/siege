@@ -2,7 +2,7 @@
 import type { Command } from '../sim/commands.ts';
 import { validateCommand } from '../sim/commands.ts';
 import type { Content } from '../sim/rules.ts';
-import { incomePreview, roundTrack, sellValue, xpNeeded, type IncomePreview, type RoundTrackEntry, type RunState } from '../sim/run.ts';
+import { incomePreview, roundTrack, sellValue, shopHudModel, type IncomePreview, type RoundTrackEntry, type RunState } from '../sim/run.ts';
 
 export type RunUiMode = 'planning' | 'combat' | 'reward';
 
@@ -103,7 +103,13 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
   const hudRound = el('span', 'hud-item');
   const hudHp = el('span', 'hud-item');
   const hudGold = el('span', 'hud-item');
-  const hudLevel = el('span', 'hud-item');
+  const hudLevel = el('div', 'hud-item hud-level');
+  const hudLevelText = el('span', 'level-text');
+  const xpBar = el('div', 'xp-bar');
+  const xpBarFill = el('div', 'xp-bar-fill');
+  xpBar.appendChild(xpBarFill);
+  const shopOdds = el('div', 'shop-odds');
+  hudLevel.append(hudLevelText, xpBar, shopOdds);
   const hudTeam = el('span', 'hud-item');
   const hudMsg = el('span', 'hud-msg');
   hud.append(hudRound, hudHp, hudGold, hudLevel, hudTeam, hudMsg);
@@ -158,12 +164,15 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
   function update(view: RunUiView): void {
     current = view;
     const { state, content, mode } = view;
-    const eco = content.rules.economy;
     hudRound.textContent = `Round ${state.round}/${content.encounters.length}`;
     hudHp.textContent = `HP ${state.hp}`;
     hudGold.textContent = `Gold ${state.gold}`;
-    const need = xpNeeded(state.level, content);
-    hudLevel.textContent = state.level >= eco.maxLevel ? `Level ${state.level} (max)` : `Level ${state.level}  XP ${state.xp}/${need}`;
+    const shopModel = shopHudModel(state, content);
+    hudLevelText.textContent = shopModel.xpNeeded === null ? `Level ${shopModel.level} (max)` : `Level ${shopModel.level}  XP ${shopModel.xp}/${shopModel.xpNeeded}`;
+    xpBarFill.style.width = `${Math.round(shopModel.xpProgress * 100)}%`;
+    shopOdds.replaceChildren(
+      ...shopModel.odds.map((row) => el('span', `odds-chip cost-tier-${row.tier}`, `${row.percent}%`)),
+    );
     hudTeam.textContent = `Team ${state.board.length}/${state.level}`;
     hudMsg.textContent = view.message;
 
@@ -189,9 +198,9 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
 
     const planning = mode === 'planning';
     btnReroll.disabled = !planning || validateCommand(state, { type: 'reroll' }, content) !== null;
-    btnReroll.textContent = `Reroll (${eco.rerollCost}g)`;
+    btnReroll.textContent = `Reroll (${shopModel.rerollCost}g)`;
     btnXp.disabled = !planning || validateCommand(state, { type: 'levelUp' }, content) !== null;
-    btnXp.textContent = `Buy XP (${eco.xpCost}g)`;
+    btnXp.textContent = `Buy XP (${shopModel.xpCost}g)`;
     const sel = view.selectedUid;
     const selUnit = sel === null ? null : [...state.board, ...state.bench].find((u) => u && u.uid === sel) ?? null;
     btnSell.disabled = !planning || !selUnit;
@@ -206,6 +215,7 @@ export function createRunUi(parent: HTMLElement, cb: RunUiCallbacks): RunUi {
       if (defId) {
         const def = content.unitsById[defId];
         card.dataset['defid'] = defId;
+        if (def) card.classList.add(`cost-tier-${def.cost}`);
         card.append(el('div', 'card-name', def?.name ?? defId), el('div', 'card-cost', `${def?.cost ?? '?'}g`));
         card.disabled = !planning || validateCommand(state, { type: 'buy', slot }, content) !== null;
         card.addEventListener('click', () => cb.onCommand({ type: 'buy', slot }));

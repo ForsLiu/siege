@@ -113,6 +113,64 @@ body {
   background: #0891b2;
 }
 
+.cost-tier-1 {
+  --tier-color: #94a3b8;
+}
+
+.cost-tier-2 {
+  --tier-color: #22c55e;
+}
+
+.cost-tier-3 {
+  --tier-color: #3b82f6;
+}
+
+.cost-tier-4 {
+  --tier-color: #a855f7;
+}
+
+.cost-tier-5 {
+  --tier-color: #f59e0b;
+}
+
+.hud-level {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-weight: 400;
+}
+
+.level-text {
+  font-weight: 600;
+}
+
+.xp-bar {
+  width: 120px;
+  height: 4px;
+  background: var(--panel-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.xp-bar-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.shop-odds {
+  display: flex;
+  gap: 3px;
+}
+
+.odds-chip {
+  background: var(--tier-color, #334155);
+  color: #0b0e12;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .gold-breakdown {
   color: var(--muted);
   font-size: 12px;
@@ -173,6 +231,10 @@ body {
 .card.selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent);
+}
+
+.shop-card {
+  border-left: 4px solid var(--tier-color, #334155);
 }
 
 .bench-card {

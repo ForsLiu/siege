@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand, checkInvariants, legalCommands, validateCommand, type Command } from '../src/sim/commands.ts';
 import { Rng } from '../src/sim/rng.ts';
-import { createRun, drawUnit, incomePreview, interestFor, poolCapacity, roundTrack, sellValue, stateHash, type RunState } from '../src/sim/run.ts';
+import { createRun, drawUnit, incomePreview, interestFor, poolCapacity, roundTrack, sellValue, shopHudModel, stateHash, xpNeeded, type RunState } from '../src/sim/run.ts';
 import type { OwnedUnit } from '../src/sim/units.ts';
 import { getPolicy } from '../tools/policies/index.ts';
 import { devContent } from './helpers.ts';
@@ -335,6 +335,43 @@ describe('economy arithmetic against rules', () => {
         // above ran for the whole run, not a silently-truncated prefix of it (code review).
         expect(s.phase, `seed ${seed} did not reach 'ended' within ${steps} steps`).toBe('ended');
       }
+    });
+  });
+
+  describe('shopHudModel (P0-23)', () => {
+    it.each([1, 4, 7])('the odds row and costs match economy rules exactly at level %i', (level) => {
+      const s = fresh();
+      s.level = level;
+      s.xp = 3;
+      const model = shopHudModel(s, content);
+      expect(model.odds.map((r) => r.percent)).toEqual(eco.shopOdds[String(level)]);
+      model.odds.forEach((row, i) => expect(row.tier).toBe(i + 1));
+      expect(model.rerollCost).toBe(eco.rerollCost);
+      expect(model.xpCost).toBe(eco.xpCost);
+      expect(model.level).toBe(level);
+      expect(model.xp).toBe(3);
+    });
+
+    it('xpNeeded and xpProgress reflect the level; both are null/1 at max level', () => {
+      const s = fresh();
+      s.level = 3;
+      s.xp = 4;
+      const model = shopHudModel(s, content);
+      expect(model.xpNeeded).toBe(xpNeeded(3, content));
+      expect(model.xpProgress).toBeCloseTo(4 / xpNeeded(3, content));
+
+      s.level = eco.maxLevel;
+      s.xp = 0;
+      const maxed = shopHudModel(s, content);
+      expect(maxed.xpNeeded).toBeNull();
+      expect(maxed.xpProgress).toBe(1);
+    });
+
+    it('falls back to the maxLevel odds row for a level with no explicit entry, matching drawUnit', () => {
+      const s = fresh();
+      s.level = eco.maxLevel + 5; // past every explicit shopOdds key
+      const model = shopHudModel(s, content);
+      expect(model.odds.map((r) => r.percent)).toEqual(eco.shopOdds[String(eco.maxLevel)]);
     });
   });
 

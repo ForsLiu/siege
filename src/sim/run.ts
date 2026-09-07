@@ -355,6 +355,44 @@ export function shopTierCount(content: Content): number {
   return n;
 }
 
+export interface ShopOddsRow {
+  /** Cost tier, 1-based (index 0 of `economy.shopOdds[level]` is tier 1). */
+  tier: number;
+  percent: number;
+}
+
+export interface ShopHudModel {
+  level: number;
+  xp: number;
+  /** Null at max level: `EconomyRules.xpToLevel` has no entry past it. */
+  xpNeeded: number | null;
+  /** `xp / xpNeeded`, clamped to [0, 1]; 1 at max level. */
+  xpProgress: number;
+  /** The current level's odds row, tier order, straight off `economy.shopOdds` (same fallback
+   *  to `maxLevel`'s row that `drawUnit` uses when a level is missing one). */
+  odds: ShopOddsRow[];
+  rerollCost: number;
+  xpCost: number;
+}
+
+/** Shop HUD numbers (P0-23): the UI reads this instead of touching `economy.shopOdds` or any
+ *  other rule constant itself, so no tuning number appears in `src/ui`. */
+export function shopHudModel(state: RunState, content: Content): ShopHudModel {
+  const eco = content.rules.economy;
+  const row = eco.shopOdds[String(state.level)] ?? eco.shopOdds[String(eco.maxLevel)] ?? [];
+  const atMax = state.level >= eco.maxLevel;
+  const needed = atMax ? null : xpNeeded(state.level, content);
+  return {
+    level: state.level,
+    xp: state.xp,
+    xpNeeded: needed,
+    xpProgress: atMax || !needed ? 1 : Math.min(1, Math.max(0, state.xp / needed)),
+    odds: row.map((percent, i) => ({ tier: i + 1, percent })),
+    rerollCost: eco.rerollCost,
+    xpCost: eco.xpCost,
+  };
+}
+
 /**
  * Return unsold shop units to the pool and draw a fresh shop. `tier` (1-based cost, used by
  * `dev:openShop`) forces every slot into that tier, falling back to the neighbouring tiers
